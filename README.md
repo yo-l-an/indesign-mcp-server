@@ -1498,6 +1498,8 @@ npm test
 
 `npm run test:offline` needs no InDesign: it checks the generated scripts and the argument handling (`test/`).
 
+`npm run test:document` builds one real test file, `tests/output/mcp-test-document.indd` (plus a PDF and a PNG export), with layers, swatches, styles, text, Markdown, shapes, paths, a table, an image and page operations. Each step is checked. Set `KEEP_OPEN=1` to leave the document open in InDesign and look at it.
+
 The live tests run on macOS and Windows. They use Helvetica Neue (macOS) or Segoe UI (Windows) with one extra style (Medium / Semibold); set `INDESIGN_TEST_FONT` and `INDESIGN_TEST_FONT_STYLE` to use another installed family. Exact CMYK values are only checked when the document profile is PSO Coated v3; with other colour settings (for example Coated FOGRA39) the colour tests check plausible values instead. On Windows, the file-symlink check is skipped unless Developer Mode or admin rights allow symlinks.
 
 ## 💡 Use Cases

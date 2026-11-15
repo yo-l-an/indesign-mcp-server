@@ -457,6 +457,9 @@ async function main() {
     out = await call('modify_paragraph_style', { styleName: 'Body', fontStyle: FONT_STYLE_2, spaceAfterPt: 4 });
     assert(new RegExp(`fontStyle=${FONT_STYLE_2}`).test(out) && new RegExp(`font=${FONT} ${FONT_STYLE_2}`).test(out), out);
     await call('modify_paragraph_style', { styleName: 'Body', fontStyle: 'Regular', fontSize: 10 });
+    // The text tests expect German typography (quotes, dashes); InDesign converts quotes for the text language,
+    // which otherwise follows the UI language (e.g. French quotes in a French InDesign)
+    inspect('var s = app.activeDocument.paragraphStyles.itemByName("Body"); s.appliedLanguage = "$ID/de_DE_2006"; return s.appliedLanguage.name;');
     await call('create_paragraph_style', { name: 'Heading 1', basedOn: undefined, fontFamily: FONT, fontStyle: 'Bold', fontSize: 20 });
     await call('create_character_style', { name: 'Bold', fontFamily: FONT, fontStyle: 'Bold' });
     await call('create_character_style', { name: 'Italic', fontFamily: FONT, fontStyle: 'Italic' });
@@ -608,7 +611,7 @@ async function main() {
     out = await call('apply_character_style_to_range', { frameId: id, styleName: 'Italic', startIndex: 0, endIndex: 1 });
     assert(/1 range/.test(out), out);
     const applied = inspect(`var s = app.activeDocument.pageItems.itemByID(${id}).parentStory; return s.characters[3].appliedCharacterStyle.name + "," + s.characters[0].appliedCharacterStyle.name + "," + s.characters[15].appliedCharacterStyle.name;`);
-    eq(applied, 'Bold,Italic,[None]', 'styles landed on the right characters');
+    eq(applied.replace(inspect('return app.translateKeyString("$ID/[None]");'), '[None]'), 'Bold,Italic,[None]', 'styles landed on the right characters');
     await fails('apply_character_style_to_range', { frameId: id, styleName: 'Bold', matchText: 'not there' }, /not found/);
     await fails('apply_character_style_to_range', { frameId: id, styleName: 'Bold', startIndex: 5, endIndex: 500 }, /Invalid range/);
     await fails('apply_character_style_to_range', { frameId: id, styleName: 'NoSuch', matchText: 'Um' }, /not found/);
@@ -906,6 +909,9 @@ async function main() {
   });
 
   await test('typography fixes keep the formatting (GREP, not story rewrites)', async () => {
+    // Insert the straight quotes as they are (InDesign's typographer's quotes would convert them on insertion),
+    // so fix_typography_in_selection has to convert them
+    inspect('app.activeDocument.textPreferences.typographersQuotes = false; return true;');
     const id = idOf(await call('create_text_frame', { content: 'Am 5. 3. 2024 sagte er "Hallo" -- und  "Welt" - ok  \nIch bin da', paragraphStyle: 'Body', x: 10, y: 60, width: 120, height: 40 }));
     await call('apply_character_style_to_range', { frameId: id, styleName: 'Bold', matchText: 'sagte' });
     const out = await call('fix_typography_in_selection', { frameId: id });
@@ -919,6 +925,7 @@ async function main() {
     assert(/No typography issues found/.test(again), `second run finds nothing: ${again}`);
     assert(/No typography issues|Total/.test(await call('find_typography_issues', { frameId: id })), 'find_typography_issues runs');
     await call('delete_object', { id });
+    inspect('app.activeDocument.textPreferences.typographersQuotes = true; return true;');
   });
 
   await test('clean_imported_text keeps words and character styles', async () => {
@@ -1182,11 +1189,11 @@ async function main() {
     let out = await call('create_line', { x1: 10, y1: 10, x2: 100, y2: 10, weight: 3, stroke: 'BandGreen', endCap: 'round', arrowEnd: 'triangle', dash: [6, 3], opacity: 50, label: 'ln' });
     const line = idOf(out);
     assert(/GraphicLine/.test(out) && /points=2 paths=1 closed=false/.test(out) && /stroke=BandGreen\/3pt/.test(out), out);
-    eq(inspect(`var l = app.activeDocument.pageItems.itemByID(${line}); return [String(l.rightLineEnd), String(l.leftLineEnd), String(l.endCap), l.strokeType.name, l.strokeDashAndGap.join("/")].join(",");`), 'TRIANGLE_ARROW_HEAD,NONE,ROUND_END_CAP,Dashed,6/3', 'arrowhead, cap and dash applied');
+    eq(inspect(`var l = app.activeDocument.pageItems.itemByID(${line}); return [String(l.rightLineEnd), String(l.leftLineEnd), String(l.endCap), (l.strokeType.name === app.translateKeyString("$ID/Dashed") ? "Dashed" : l.strokeType.name), l.strokeDashAndGap.join("/")].join(",");`), 'TRIANGLE_ARROW_HEAD,NONE,ROUND_END_CAP,Dashed,6/3', 'arrowhead, cap and dash applied');
     out = await call('create_line', { x1: 10, y1: 30, x2: 100, y2: 30, controlPoint1: { x: 40, y: 10 }, controlPoint2: { x: 70, y: 50 }, dashStyle: 'dotted' .replace('d', 'D') });
     const curve = readPoints(await call('edit_path_points', { id: idOf(out) }));
     near(curve[0].rx, 40, 0.01, 'curved line handle 1 x'); near(curve[0].ry, 10, 0.01, 'handle 1 y'); near(curve[1].lx, 70, 0.01, 'handle 2 x'); near(curve[1].ly, 50, 0.01, 'handle 2 y');
-    assert(/Dotted/.test(inspect(`return app.activeDocument.pageItems.itemByID(${idOf(out)}).strokeType.name;`)), 'named stroke style applied');
+    assert(inspect(`var n = app.activeDocument.pageItems.itemByID(${idOf(out)}).strokeType.name; return n === app.translateKeyString("$ID/Canned Dotted");`) === "true", 'named stroke style applied');
     await fails('create_line', { x1: 0, y1: 0, x2: 1, y2: 1, arrowEnd: 'rocket' }, /Invalid parameter "arrowEnd"/);
     await fails('create_line', { x1: 0, y1: 0, x2: 1, y2: 1, dashStyle: 'Nonexistent Style' }, /Stroke style not found/);
     for (const [args, points, label] of [
@@ -1294,9 +1301,9 @@ async function main() {
     out = await call('set_object_stroke', { id: ids[1], swatch: 'Black', weight: 4, tint: 80, alignment: 'inside', join: 'round', cap: 'round', miterLimit: 6, dash: [8, 4], opacity: 40 });
     assert(/stroke=Black\/4pt/.test(out), out);
     eq(order(), before, 'the stacking order is unchanged after changing the stroke');
-    eq(inspect(`var r = app.activeDocument.pageItems.itemByID(${ids[1]}); return [String(r.strokeAlignment), String(r.endJoin), String(r.endCap), r.miterLimit, r.strokeType.name, r.strokeDashAndGap.join("/"), Math.round(r.strokeTint), Math.round(r.strokeTransparencySettings.blendingSettings.opacity)].join(",");`), 'INSIDE_ALIGNMENT,ROUND_END_JOIN,ROUND_END_CAP,6,Dashed,8/4,80,40', 'all stroke properties applied');
+    eq(inspect(`var r = app.activeDocument.pageItems.itemByID(${ids[1]}); return [String(r.strokeAlignment), String(r.endJoin), String(r.endCap), r.miterLimit, (r.strokeType.name === app.translateKeyString("$ID/Dashed") ? "Dashed" : r.strokeType.name), r.strokeDashAndGap.join("/"), Math.round(r.strokeTint), Math.round(r.strokeTransparencySettings.blendingSettings.opacity)].join(",");`), 'INSIDE_ALIGNMENT,ROUND_END_JOIN,ROUND_END_CAP,6,Dashed,8/4,80,40', 'all stroke properties applied');
     await call('set_object_stroke', { id: ids[1], dashStyle: 'solid' });
-    assert(/Solid/.test(inspect(`return app.activeDocument.pageItems.itemByID(${ids[1]}).strokeType.name;`)), 'back to solid');
+    assert(inspect(`var n = app.activeDocument.pageItems.itemByID(${ids[1]}).strokeType.name; return n === app.translateKeyString("$ID/Solid");`) === "true", 'back to solid');
     const tf = idOf(await call('create_text_frame', { content: 'framed', y: 150, width: 60, height: 20 }));
     await call('set_object_fill', { id: tf, swatch: 'Accent' });
     await call('set_object_stroke', { id: tf, swatch: 'Black', weight: 1 });
@@ -1760,7 +1767,7 @@ async function main() {
       keepWithNext: 1, keepWithPrevious: true, keepFirstLines: 2, keepLastLines: 2, tracking: 25, kerning: 'Optical', leftIndent: 4, firstLineIndent: 2,
     });
     assert(/hyphenation=false/.test(out) && /composer=Adobe Single-line Composer/.test(out) && /capitalization=ALL_CAPS/.test(out) && /ligatures=false/.test(out), out);
-    eq(inspect(`var p = app.activeDocument.paragraphStyles.itemByName("Typo"); return [p.hyphenateWordsLongerThan, p.hyphenateAfterFirst, p.hyphenateBeforeLast, p.hyphenateLadderLimit, p.hyphenateCapitalizedWords, String(p.otfFigureStyle), p.otfDiscretionaryLigature, p.otfSlashedZero, p.keepWithPrevious, p.keepFirstLines, p.keepLastLines, p.tracking, String(p.kerningMethod)].join(",");`),
+    eq(inspect(`var p = app.activeDocument.paragraphStyles.itemByName("Typo"); return [p.hyphenateWordsLongerThan, p.hyphenateAfterFirst, p.hyphenateBeforeLast, p.hyphenateLadderLimit, p.hyphenateCapitalizedWords, String(p.otfFigureStyle), p.otfDiscretionaryLigature, p.otfSlashedZero, p.keepWithPrevious, p.keepFirstLines, p.keepLastLines, p.tracking, (String(p.kerningMethod) === app.translateKeyString("$ID/Optical") ? "Optical" : String(p.kerningMethod))].join(",");`),
       '8,3,4,2,false,PROPORTIONAL_OLDSTYLE,true,true,true,2,2,25,Optical', 'every property really landed on the style');
     out = await call('modify_paragraph_style', { styleName: 'Typo', composer: 'paragraph', capitalization: 'normal', hyphenation: true, ligatures: true });
     assert(/composer=Adobe Paragraph Composer/.test(out) && /capitalization=NORMAL/.test(out) && /hyphenation=true/.test(out), out);

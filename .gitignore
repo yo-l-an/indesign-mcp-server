@@ -68,3 +68,6 @@ temp_script.jsx
 *.sublime-*
 *.swp
 *.swo
+
+# Output of tests/test-document.mjs
+tests/output/

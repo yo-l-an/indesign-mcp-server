@@ -1102,6 +1102,9 @@ CAUTION: Only do this if you understand the risks and have verified the operatio
             throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
         }
       } catch (error) {
+        // Keep protocol errors (invalid params, unknown tool) as they are: wrapping them again
+        // turned them into InternalError and doubled the "MCP error -326xx:" prefix
+        if (error instanceof McpError) throw error;
         throw new McpError(ErrorCode.InternalError, `Error executing tool ${name}: ${error.message}`);
       }
     });
@@ -2711,6 +2714,9 @@ CAUTION: Only do this if you understand the risks and have verified the operatio
       var frame = page.textFrames.add();
       try {
         frame.geometricBounds = [${ny}, ${nx}, ${ny + nh}, ${nx + nw}];
+        // Style the empty frame before inserting the text: InDesign converts straight quotes for the
+        // language at the insertion point, which must be the style's language, not the UI default
+        if (pStyle) { try { frame.insertionPoints[0].appliedParagraphStyle = pStyle; } catch (e) {} }
         frame.contents = ${this.jsStr(text)};
         var story = frame.parentStory;
         var range = story.texts[0];
@@ -2959,7 +2965,8 @@ CAUTION: Only do this if you understand the risks and have verified the operatio
     if (has(a.tracking)) lines.push(`pStyle.tracking = ${this.jsNum(a.tracking, 'tracking')};`);
     if (has(a.kerning)) {
       if (!['Metrics', 'Optical'].includes(a.kerning)) throw new Error(`Invalid kerning: ${a.kerning} (use Metrics or Optical)`);
-      lines.push(`pStyle.kerningMethod = ${this.jsStr(a.kerning)};`);
+      // kerningMethod takes the localised name ("Optique" in French InDesign); the $ID/ key works in every language
+      lines.push(`pStyle.kerningMethod = ${this.jsStr('$ID/' + a.kerning)};`);
     }
     if (has(a.spaceBefore)) lines.push(`pStyle.spaceBefore = "${this.jsNum(a.spaceBefore, 'spaceBefore')}mm";`);
     if (has(a.spaceBeforePt)) lines.push(`pStyle.spaceBefore = "${this.jsNum(a.spaceBeforePt, 'spaceBeforePt')}pt";`);
@@ -2977,7 +2984,8 @@ CAUTION: Only do this if you understand the risks and have verified the operatio
     if (has(a.textColor)) lines.push(`pStyle.fillColor = __swatch(doc, ${this.jsStr(a.textColor)});`);
     if (has(a.keepWithPrevious)) lines.push(`pStyle.keepWithPrevious = ${a.keepWithPrevious ? 'true' : 'false'};`);
     if (has(a.composer)) {
-      const composers = { paragraph: 'Adobe Paragraph Composer', 'single-line': 'Adobe Single-line Composer' };
+      // Locale-independent keys: the plain names ("Adobe Paragraph Composer") are rejected by localised InDesign
+      const composers = { paragraph: '$ID/HL Composer', 'single-line': '$ID/HL Single' };
       if (!composers[a.composer]) throw new Error(`Invalid composer: ${a.composer} (use paragraph or single-line)`);
       lines.push(`pStyle.composer = ${this.jsStr(composers[a.composer])};`);
     }
@@ -3037,7 +3045,15 @@ CAUTION: Only do this if you understand the risks and have verified the operatio
         " fontStyle=" + pStyle.fontStyle + " size=" + __r(pStyle.pointSize) + "pt leading=" + (pStyle.leading === Leading.AUTO ? "auto" : __r(pStyle.leading) + "pt") +
         " tracking=" + pStyle.tracking + " spaceBefore=" + __r(pStyle.spaceBefore) + "mm spaceAfter=" + __r(pStyle.spaceAfter) + "mm" +
         " firstLineIndent=" + __r(pStyle.firstLineIndent) + "mm leftIndent=" + __r(pStyle.leftIndent) + "mm hyphenation=" + pStyle.hyphenation +
-        " composer=" + (function () { try { return pStyle.composer; } catch (e) { return "n/a"; } })() +
+        " composer=" + (function () {
+          // InDesign reports the localised composer name; report the English one in every language
+          try {
+            var c = pStyle.composer;
+            if (c === app.translateKeyString("$ID/HL Composer")) return "Adobe Paragraph Composer";
+            if (c === app.translateKeyString("$ID/HL Single")) return "Adobe Single-line Composer";
+            return c;
+          } catch (e) { return "n/a"; }
+        })() +
         " capitalization=" + (function () { try { return String(pStyle.capitalization); } catch (e) { return "n/a"; } })() +
         " ligatures=" + (function () { try { return pStyle.ligatures; } catch (e) { return "n/a"; } })();
     `;
@@ -3366,6 +3382,14 @@ CAUTION: Only do this if you understand the risks and have verified the operatio
       PDFX4: '[PDF/X-4:2008]',
     };
     const presetName = aliases[preset] || preset;
+    // Localised InDesign versions translate these three built-in preset names ("[Qualité supérieure]" ...),
+    // so when the English name is missing they are recognised by their settings instead
+    const fingerprints = {
+      '[High Quality Print]': 'p.colorBitmapSamplingDPI >= 250 && p.pdfColorSpace === PDFColorSpace.UNCHANGED_COLOR_SPACE',
+      '[Press Quality]': 'p.colorBitmapSamplingDPI >= 250 && p.pdfColorSpace === PDFColorSpace.REPURPOSE_CMYK',
+      '[Smallest File Size]': 'p.colorBitmapSamplingDPI < 200',
+    };
+    const fingerprint = fingerprints[presetName];
     // Page numbers are positions in the document (1 = first page); they are sent to InDesign as absolute
     // page numbers ("+2-+3"), so custom numbering, sections and repeated page names cannot change the meaning.
     const positions = this.parsePageRange(pageRange);
@@ -3374,6 +3398,13 @@ CAUTION: Only do this if you understand the risks and have verified the operatio
     const script = `
       var doc = __requireDoc();
       var base = app.pdfExportPresets.itemByName(${this.jsStr(presetName)});
+      ${fingerprint ? `if (!base.isValid) {
+        for (var j = 0; j < app.pdfExportPresets.length; j++) {
+          var p = app.pdfExportPresets[j];
+          if (p.name.charAt(0) !== "[" || p.standardsCompliance !== PDFXStandards.NONE) continue;
+          if (${fingerprint}) { base = p; break; }
+        }
+      }` : ''}
       if (!base.isValid) {
         var names = [];
         for (var i = 0; i < app.pdfExportPresets.length; i++) names.push(app.pdfExportPresets[i].name);
@@ -3399,7 +3430,7 @@ CAUTION: Only do this if you understand the risks and have verified the operatio
         try { tmp.remove(); } catch (e) {}
       }
       if (!pdfFile.exists) throw new Error("PDF export did not create the file");
-      "PDF exported: " + pdfFile.fsName + " (requested preset " + ${this.jsStr(preset)} + ", effective preset " + base.name + ", pages " + ${this.jsStr(positions === null ? 'all' : String(pageRange).replace(/\s+/g, ''))} + ", bleed " + ${includeBleed ? '"included"' : '"not included"'} + ", slug " + ${includeSlug ? '"included"' : '"not included"'} + ")";
+      "PDF exported: " + pdfFile.fsName + " (requested preset " + ${this.jsStr(preset)} + ", effective preset " + (base.name === ${this.jsStr(presetName)} ? base.name : ${this.jsStr(presetName)} + " = " + base.name) + ", pages " + ${this.jsStr(positions === null ? 'all' : String(pageRange).replace(/\s+/g, ''))} + ", bleed " + ${includeBleed ? '"included"' : '"not included"'} + ", slug " + ${includeSlug ? '"included"' : '"not included"'} + ")";
     `;
 
     const result = await this.executeInDesignScript(script);
