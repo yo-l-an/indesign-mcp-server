@@ -13,6 +13,32 @@ const VECTOR_EXTENSIONS = ['.svg', '.ai', '.eps', '.pdf'];
 const CROPS = { pdf: 'CROP_PDF', art: 'CROP_ART', trim: 'CROP_TRIM', bleed: 'CROP_BLEED', media: 'CROP_MEDIA', content_visible: 'CROP_CONTENT_VISIBLE_LAYERS', content_all: 'CROP_CONTENT_ALL_LAYERS' };
 const FITS = { PROPORTIONALLY: 'FitOptions.PROPORTIONALLY', FILL_PROPORTIONALLY: 'FitOptions.FILL_PROPORTIONALLY', CONTENT_TO_FRAME: 'FitOptions.CONTENT_TO_FRAME', FRAME_TO_CONTENT: 'FitOptions.FRAME_TO_CONTENT', CENTER_CONTENT: 'FitOptions.CENTER_CONTENT', NONE: null };
 
+// Size of an SVG in mm from the width/height of its root element, or null when they are missing
+// or relative (%, em). Unitless and px count as 1 px = 1 pt, as InDesign on macOS places them.
+const SVG_UNIT_MM = { '': 25.4 / 72, px: 25.4 / 72, pt: 25.4 / 72, pc: 25.4 / 6, in: 25.4, cm: 10, mm: 1 };
+export function svgNaturalSizeMm(file) {
+  let head;
+  try {
+    const fd = fs.openSync(file, 'r');
+    const buf = Buffer.alloc(64 * 1024);
+    const n = fs.readSync(fd, buf, 0, buf.length, 0);
+    fs.closeSync(fd);
+    head = buf.toString('utf8', 0, n);
+  } catch {
+    return null;
+  }
+  const root = head.match(/<svg\b[^>]*>/i);
+  if (!root) return null;
+  const dim = (name) => {
+    const m = root[0].match(new RegExp(`\\s${name}\\s*=\\s*["']\\s*([\\d.]+(?:e[+-]?\\d+)?)\\s*(px|pt|pc|in|cm|mm)?\\s*["']`, 'i'));
+    if (!m) return null;
+    const v = Number(m[1]) * SVG_UNIT_MM[(m[2] || '').toLowerCase()];
+    return Number.isFinite(v) && v > 0 ? Math.round(v * 1000) / 1000 : null;
+  };
+  const w = dim('width'), h = dim('height');
+  return w && h ? { w, h } : null;
+}
+
 // SVG markup is parsed by InDesign; refuse anything that could make it read other files or
 // fetch URLs (external references, entities, scripts).
 export function validateSvgMarkup(svg) {
@@ -114,7 +140,7 @@ export function createGraphicsTools(server) {
     },
     {
       name: 'place_graphic',
-      description: 'Place a vector graphic (.svg, .ai, .eps, .pdf) into a new frame (mm). Give width and height for a fixed frame, only one for the aspect ratio, or neither for the natural size. PDF/AI: pdfPage (default 1) and crop (pdf, art, trim, bleed, media, content_visible, content_all). Returns the frame id and whether the result is linked; embed: true unlinks and embeds it.',
+      description: 'Place a vector graphic (.svg, .ai, .eps, .pdf) into a new frame (mm). Give width and height for a fixed frame, only one for the aspect ratio, or neither for the natural size (SVG: taken from the root width/height, unitless and px as 1 px = 1 pt). PDF/AI: pdfPage (default 1) and crop (pdf, art, trim, bleed, media, content_visible, content_all). Returns the frame id and whether the result is linked; embed: true unlinks and embeds it.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -264,7 +290,14 @@ export function createGraphicsTools(server) {
     const pdfPage = has(args.pdfPage) ? Math.floor(jsNum(args.pdfPage, 'pdfPage')) : 1;
     if (pdfPage < 1) throw new Error('pdfPage must be >= 1');
     const nx = has(args.x) ? jsNum(args.x, 'x') : 10, ny = has(args.y) ? jsNum(args.y, 'y') : 10;
-    const w = has(args.width) ? jsNum(args.width, 'width') : null, h = has(args.height) ? jsNum(args.height, 'height') : null;
+    let w = has(args.width) ? jsNum(args.width, 'width') : null, h = has(args.height) ? jsNum(args.height, 'height') : null;
+    let fitName = fit;
+    if (ext === '.svg' && w === null && h === null) {
+      // Natural size from the SVG itself: InDesign's SVG import does not size reliably across
+      // platforms (on Windows 100px came out as 102 mm instead of 35.278 mm).
+      const natural = svgNaturalSizeMm(file);
+      if (natural) { w = natural.w; h = natural.h; fitName = 'CONTENT_TO_FRAME'; }
+    }
     const usesPdfPrefs = ext === '.pdf' || ext === '.ai';
     const embed = args.embed === true;
 
@@ -295,7 +328,7 @@ export function createGraphicsTools(server) {
           ${w !== null ? `rect.geometricBounds = [${ny}, ${nx}, ${ny} + ${w} * ih / iw, ${nx} + ${w}]; rect.fit(FitOptions.CONTENT_TO_FRAME);`
             : h !== null ? `rect.geometricBounds = [${ny}, ${nx}, ${ny} + ${h}, ${nx} + ${h} * iw / ih]; rect.fit(FitOptions.CONTENT_TO_FRAME);`
             : `rect.geometricBounds = [${ny}, ${nx}, ${ny} + ih, ${nx} + iw]; rect.fit(FitOptions.CONTENT_TO_FRAME);`}
-        ` : (FITS[fit] ? `rect.fit(${FITS[fit]});` : '')}
+        ` : (FITS[fitName] ? `rect.fit(${FITS[fitName]});` : '')}
         ${embed ? `
           rect.graphics[0].itemLink.unlink();
         ` : ''}

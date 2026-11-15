@@ -18,9 +18,16 @@ import path from 'path';
 import zlib from 'zlib';
 import { fileURLToPath } from 'url';
 import { deltaE } from '../lib/color.js';
+import * as windowsLauncher from '../lib/launcher-windows.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const IS_WINDOWS = process.platform === 'win32';
 const APP = process.env.INDESIGN_APP_NAME || 'Adobe InDesign 2026';
+// Test font: a family with Regular, Bold, Italic, Bold Italic and one more style (FONT_STYLE_2).
+// Helvetica Neue ships with macOS, Segoe UI with Windows.
+const FONT = process.env.INDESIGN_TEST_FONT || (IS_WINDOWS ? 'Segoe UI' : 'Helvetica Neue');
+const FONT_STYLE_2 = process.env.INDESIGN_TEST_FONT_STYLE || (IS_WINDOWS ? 'Semibold' : 'Medium');
+const FONT_TYPO = FONT.slice(0, -1); // misspelled family for the suggestion tests
 // Real-world sample graphics shipped in the repo (override with INDESIGN_TEST_AI / INDESIGN_TEST_EPS / INDESIGN_TEST_JPG)
 const SAMPLES = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'sample-files');
 for (const [key, name] of [['INDESIGN_TEST_AI', 'sample-1MB.ai'], ['INDESIGN_TEST_EPS', 'sample-1MB.eps'], ['INDESIGN_TEST_JPG', 'sample-1MB.jpg']]) {
@@ -104,11 +111,30 @@ function inspect(js) {
   fs.rmSync(res, { force: true });
   fs.writeFileSync(jsx, `var __r; try { __r = (function(){ ${js} })(); } catch (e) { __r = "ERR " + e.number + " " + e.message; }
 var f = new File(${JSON.stringify(res)}); f.encoding = "UTF-8"; f.lineFeed = "Unix"; f.open("w"); f.write(String(__r)); f.close();`);
-  execSync(`osascript -e 'tell application "${APP}" to do script (POSIX file "${jsx}") language javascript'`);
+  runJsx(jsx);
   return fs.readFileSync(res, 'utf8');
 }
 
+// Start a .jsx in InDesign: AppleScript on macOS, COM (cscript) on Windows
+function runJsx(jsx, timeout = 60000) {
+  if (!IS_WINDOWS) {
+    execSync(`osascript -e 'tell application "${APP}" to do script (POSIX file "${jsx}") language javascript'`, { timeout });
+    return;
+  }
+  const launcher = jsx.replace(/\.jsx$/, '.launcher.js');
+  fs.writeFileSync(launcher, windowsLauncher.launcherSource(windowsLauncher.resolveProgId(), jsx), 'ascii');
+  windowsLauncher.runLauncher(launcher, timeout);
+}
+
 function ensureInDesign() {
+  if (IS_WINDOWS) {
+    // COM starts InDesign when needed; wait until it runs a script
+    if (!windowsLauncher.isInDesignRunning()) console.log('Starting InDesign ...');
+    const jsx = path.join(TMP, 'ready.jsx');
+    fs.writeFileSync(jsx, 'app.version;');
+    runJsx(jsx, 300000);
+    return;
+  }
   const running = () => {
     try { execSync(`pgrep -f "${APP}.app/Contents/MacOS"`, { stdio: 'ignore' }); return true; } catch { return false; }
   };
@@ -253,7 +279,7 @@ async function main() {
     command: 'node',
     args: [path.join(__dirname, '..', 'index.js')],
     // optional real-world graphics: INDESIGN_TEST_AI=/path/file.ai  INDESIGN_TEST_EPS=/path/file.eps (their folders are made readable for the run)
-    env: { ...process.env, INDESIGN_ALLOWED_DIRS: [TMP, ...['INDESIGN_TEST_AI', 'INDESIGN_TEST_EPS', 'INDESIGN_TEST_JPG'].filter((k) => process.env[k]).map((k) => path.dirname(process.env[k]))].join(':'), INDESIGN_ALLOW_ARBITRARY_CODE: '' },
+    env: { ...process.env, INDESIGN_ALLOWED_DIRS: [TMP, ...['INDESIGN_TEST_AI', 'INDESIGN_TEST_EPS', 'INDESIGN_TEST_JPG'].filter((k) => process.env[k]).map((k) => path.dirname(process.env[k]))].join(path.delimiter), INDESIGN_ALLOW_ARBITRARY_CODE: '' },
   });
   client = new Client({ name: 'indesign-mcp-tests', version: '1' }, { capabilities: {} });
   await client.connect(transport);
@@ -361,7 +387,7 @@ async function main() {
     await fails('create_color_swatch', { name: 'Bad', colorValues: [1, 2] }, /colorValues/);
     const conv = await call('convert_rgb_to_cmyk', { rgb: [255, 0, 0] });
     assert(/CMYK 0,\d+(\.\d+)?,\d+(\.\d+)?,0 \(C,M,Y,K/.test(conv) && /Colour-managed/.test(conv), conv);
-    assert(/Orange \[CMYK process: 0,70\.\d+,9\d\.\d+,0\]/.test(await call('get_document_info')), 'Orange stored as a colour-managed CMYK value');
+    assert(/Orange \[CMYK process: 0,70(\.\d+)?,9\d(\.\d+)?,0\]/.test(await call('get_document_info')), 'Orange stored as a colour-managed CMYK value');
   });
 
 
@@ -378,7 +404,14 @@ async function main() {
     // profile conversion (default): the numbers InDesign itself produces, and the colour on screen stays put
     let out = await call('create_color_swatch', { name: 'CmsGreen', hex: '#2e7d32' });
     const v = out.match(/CMYK ([\d.]+),([\d.]+),([\d.]+),([\d.]+)/).slice(1).map(Number);
-    [72.7, 10.4, 89.5, 28.9].forEach((e, i) => near(v[i], e, 1.5, `profile conversion CMYK[${i}]`));
+    // The exact numbers depend on the document's CMYK profile (InDesign's colour settings);
+    // they are checked for PSO Coated v3, other profiles only get a plausibility check.
+    const psoV3 = /PSO Coated v3/.test(out);
+    const cmykNear = (vals, expected, label) => {
+      if (psoV3) expected.forEach((e, i) => near(vals[i], e, 1.5, `${label}[${i}]`));
+      else assert(vals[0] > 40 && vals[1] < 40 && vals[2] > 30, `${label}: a green/teal CMYK value (${vals}) for a non-PSO profile`);
+    };
+    cmykNear(v, [72.7, 10.4, 89.5, 28.9], 'profile conversion CMYK');
     assert(/PSO Coated v3|document profile/.test(out), out);
     const cms = await render('CmsGreen', 10);
     assert(deltaE(intended, cms) < 4, `the profile conversion renders as the intended green: ${cms} vs ${intended} (delta E ${deltaE(intended, cms).toFixed(1)})`);
@@ -394,10 +427,10 @@ async function main() {
     // update_color_swatch uses the same conversion
     out = await call('update_color_swatch', { name: 'CmsGreen', hex: '#00897b' });
     const u = out.match(/CMYK process ([\d.]+),([\d.]+),([\d.]+),([\d.]+)/).slice(1).map(Number);
-    [77.1, 13.1, 49.3, 17.7].forEach((e, i) => near(u[i], e, 1.5, `updated swatch CMYK[${i}]`));
+    cmykNear(u, [77.1, 13.1, 49.3, 17.7], 'updated swatch CMYK');
     // convert_rgb_to_cmyk reports the gamut
     let conv = await call('convert_rgb_to_cmyk', { hex: '#2e7d32' });
-    assert(/CMYK 72\.7,10\.4,89\.5,28\.9/.test(conv) && /reproduced accurately/.test(conv) && /PSO Coated v3/.test(conv), conv);
+    assert((psoV3 ? /CMYK 72\.7,10\.4,89\.5,28\.9/.test(conv) && /PSO Coated v3/.test(conv) : /CMYK [\d.]+,/.test(conv)) && /reproduced accurately/.test(conv), conv);
     conv = await call('convert_rgb_to_cmyk', { hex: '#1976d2' });
     assert(/OUTSIDE the print gamut/.test(conv) && /looks like #[0-9A-F]{6}/.test(conv), `out-of-gamut colours are flagged: ${conv}`);
     conv = await call('convert_rgb_to_cmyk', { hex: '#2e7d32', conversion: 'simple' });
@@ -413,21 +446,21 @@ async function main() {
   console.log('\nStyles');
   await test('paragraph and character styles', async () => {
     let out = await call('create_paragraph_style', {
-      name: 'Title', fontFamily: 'Helvetica Neue', fontStyle: 'Bold', fontSize: 24, leading: 28, tracking: 10, kerning: 'Optical',
+      name: 'Title', fontFamily: FONT, fontStyle: 'Bold', fontSize: 24, leading: 28, tracking: 10, kerning: 'Optical',
       spaceBeforePt: 6, spaceAfter: 2, firstLineIndent: 3, leftIndent: 2, hyphenation: false, keepWithNext: 1, keepLinesTogether: true, alignment: 'LEFT_ALIGN',
     });
-    assert(/font=Helvetica Neue Bold/.test(out), `applied font is reported: ${out}`);
+    assert(new RegExp(`font=${FONT} Bold`).test(out), `applied font is reported: ${out}`);
     assert(/size=24pt/.test(out) && /leading=28pt/.test(out) && /tracking=10/.test(out) && /firstLineIndent=3mm/.test(out) && /hyphenation=false/.test(out), out);
     near(numAfter(out, 'spaceBefore'), 2.117, 0.01, '6 pt in mm');
-    out = await call('create_paragraph_style', { name: 'Body', baseStyle: 'Title', fontFamily: 'Helvetica Neue', fontStyle: 'Regular', fontSize: 10, leading: 13 });
-    assert(/font=Helvetica Neue Regular/.test(out), out);
-    out = await call('modify_paragraph_style', { styleName: 'Body', fontStyle: 'Medium', spaceAfterPt: 4 });
-    assert(/fontStyle=Medium/.test(out) && /font=Helvetica Neue Medium/.test(out), out);
+    out = await call('create_paragraph_style', { name: 'Body', baseStyle: 'Title', fontFamily: FONT, fontStyle: 'Regular', fontSize: 10, leading: 13 });
+    assert(new RegExp(`font=${FONT} Regular`).test(out), out);
+    out = await call('modify_paragraph_style', { styleName: 'Body', fontStyle: FONT_STYLE_2, spaceAfterPt: 4 });
+    assert(new RegExp(`fontStyle=${FONT_STYLE_2}`).test(out) && new RegExp(`font=${FONT} ${FONT_STYLE_2}`).test(out), out);
     await call('modify_paragraph_style', { styleName: 'Body', fontStyle: 'Regular', fontSize: 10 });
-    await call('create_paragraph_style', { name: 'Heading 1', basedOn: undefined, fontFamily: 'Helvetica Neue', fontStyle: 'Bold', fontSize: 20 });
-    await call('create_character_style', { name: 'Bold', fontFamily: 'Helvetica Neue', fontStyle: 'Bold' });
-    await call('create_character_style', { name: 'Italic', fontFamily: 'Helvetica Neue', fontStyle: 'Italic' });
-    await call('create_character_style', { name: 'Bold Italic', fontFamily: 'Helvetica Neue', fontStyle: 'Bold Italic' });
+    await call('create_paragraph_style', { name: 'Heading 1', basedOn: undefined, fontFamily: FONT, fontStyle: 'Bold', fontSize: 20 });
+    await call('create_character_style', { name: 'Bold', fontFamily: FONT, fontStyle: 'Bold' });
+    await call('create_character_style', { name: 'Italic', fontFamily: FONT, fontStyle: 'Italic' });
+    await call('create_character_style', { name: 'Bold Italic', fontFamily: FONT, fontStyle: 'Bold Italic' });
     await fails('create_paragraph_style', { name: 'Title' }, /already exists/);
     await fails('create_paragraph_style', { name: 'X', fontFamily: 'NoSuchFontXYZ' }, /Font not installed/);
     await fails('create_paragraph_style', { name: 'X', baseStyle: 'NoSuchStyle' }, /not found/);
@@ -443,7 +476,7 @@ async function main() {
     assert(headline > 0, `frame id returned: ${out}`);
     assert(/overflows=false/.test(out), out);
     const list = await call('list_text_frames');
-    assert(new RegExp(`id=${headline}\\b[^\\n]*style="Title" size=24pt font="Helvetica Neue Bold"`).test(list), `style values must not be overridden by defaults: ${list}`);
+    assert(new RegExp(`id=${headline}\\b[^\\n]*style="Title" size=24pt font="${FONT} Bold"`).test(list), `style values must not be overridden by defaults: ${list}`);
     // explicit parameters still apply
     const o2 = await call('create_text_frame', { content: 'Explicit', paragraphStyle: 'Body', fontSize: 33, x: 10, y: 40, width: 120, height: 20 });
     assert(new RegExp(`id=${idOf(o2)}\\b[^\\n]*size=33pt`).test(await call('list_text_frames')), 'explicit fontSize is applied');
@@ -479,7 +512,7 @@ async function main() {
 
   await test('forced line breaks are visible in an exported image', async () => {
     const name = await newDoc({ preset: 'A5', pages: 2 });
-    await call('create_paragraph_style', { name: 'Big', fontFamily: 'Helvetica Neue', fontStyle: 'Bold', fontSize: 40, leading: 48, hyphenation: false });
+    await call('create_paragraph_style', { name: 'Big', fontFamily: FONT, fontStyle: 'Bold', fontSize: 40, leading: 48, hyphenation: false });
     await call('create_text_frame', { content: 'AAA<br>BBB', paragraphStyle: 'Big', x: 10, y: 20, width: 120, height: 60 });
     await call('create_text_frame', { content: 'AAA BBB', paragraphStyle: 'Big', pageIndex: 1, x: 10, y: 20, width: 120, height: 60 });
     const dir = path.join(outDir, 'linebreak');
@@ -1012,11 +1045,17 @@ async function main() {
   });
 
   await test('paths: symlinks cannot lead outside the allowed directories', async () => {
+    const sysDir = IS_WINDOWS ? (process.env.SystemRoot || 'C:\\Windows') : '/etc';
     const link = path.join(TMP, 'sneaky.png');
-    fs.symlinkSync('/etc/hosts', link);
-    await fails('place_image', { imagePath: link }, /Access denied/);
+    try {
+      fs.symlinkSync(path.join(sysDir, IS_WINDOWS ? 'win.ini' : 'hosts'), link);
+      await fails('place_image', { imagePath: link }, /Access denied/);
+    } catch (e) {
+      // Windows only allows file symlinks with admin rights or Developer Mode
+      if (!(IS_WINDOWS && e.code === 'EPERM')) throw e;
+    }
     const dirLink = path.join(TMP, 'sneaky-dir');
-    fs.symlinkSync('/etc', dirLink);
+    fs.symlinkSync(sysDir, dirLink, 'junction'); // a junction needs no extra rights on Windows ('junction' is ignored elsewhere)
     await fails('export_pdf', { filePath: path.join(dirLink, 'x.pdf'), confirmDestructive: true }, /Access denied/);
   });
 
@@ -1434,7 +1473,7 @@ async function main() {
   await test('measure_text: lines, widths, overflow', async () => {
     const name = await newDoc({ preset: 'A5' });
     testDoc = name;
-    await call('create_paragraph_style', { name: 'Meas', fontFamily: 'Helvetica Neue', fontStyle: 'Regular', fontSize: 12, leading: 15, hyphenation: false });
+    await call('create_paragraph_style', { name: 'Meas', fontFamily: FONT, fontStyle: 'Regular', fontSize: 12, leading: 15, hyphenation: false });
     const wrap = idOf(await call('create_text_frame', { content: 'Hello world this text wraps across several lines in the small frame', paragraphStyle: 'Meas', x: 10, y: 10, width: 50, height: 40 }));
     let out = await call('measure_text', { frameId: wrap });
     const lines = [...out.matchAll(/\[(\d+)\] width=([\d.]+) mm baseline=[\d.]+ mm: "(.*)"/g)].map((m) => ({ w: Number(m[2]), t: m[3] }));
@@ -1679,7 +1718,7 @@ async function main() {
     assert(/updated: CMYK process 10,20,30,40/.test(out) && /Used by 2 fill\(s\)/.test(out), out);
     assert(/fill: Brand2 \[CMYK 10,20,30,40\]/.test(await call('get_object_info', { id: rect })), 'objects follow the changed swatch');
     out = await call('update_color_swatch', { name: 'Brand2', hex: '#FF6600' });
-    assert(/CMYK process 0,70\.\d+,9\d\.\d+,0/.test(out) && /converted to CMYK with the document profile/.test(out), out);
+    assert(/CMYK process 0,70(\.\d+)?,9\d(\.\d+)?,0/.test(out) && /converted to CMYK with the document profile/.test(out), out);
     out = await call('update_color_swatch', { name: 'Brand2', spotColor: true, newName: 'Brand2 Spot' });
     assert(/Swatch Brand2 Spot updated: CMYK spot/.test(out), out);
     assert(/fill: Brand2 Spot/.test(await call('get_object_info', { id: other })), 'objects follow the rename');
@@ -1691,7 +1730,7 @@ async function main() {
     // list with values and usage
     await call('create_gradient_swatch', { name: 'GradC4', stops: [{ swatch: 'Brand2 Spot', position: 0 }, { swatch: 'Other', position: 100 }] });
     const list = await call('list_color_swatches');
-    assert(/• Brand2 Spot {2}\(Color, CMYK spot \[0, 70\.\d, 97\.\d, 0\]\)/.test(list), `values are listed (the colour-managed CMYK of #FF6600): ${list}`);
+    assert(/• Brand2 Spot {2}\(Color, CMYK spot \[0, 70(\.\d+)?, 9\d(\.\d+)?, 0\]\)/.test(list), `values are listed (the colour-managed CMYK of #FF6600): ${list}`);
     assert(new RegExp(`Brand2 Spot[^\\n]*used: 2 fill\\(s\\), 0 stroke\\(s\\), 0 style\\(s\\), ids (${rect},${other}|${other},${rect})`).test(list), `usage with ids: ${list}`);
     assert(/Other {2}\(Color, CMYK process \[0, 0, 0, 50\]\) {2}used: not used/.test(list), 'an unused swatch says so');
     assert(/GradC4 {2}\(Gradient, linear: 0% Brand2 Spot \| 100% Other\)/.test(list), `gradients list their stops: ${list}`);
@@ -1715,7 +1754,7 @@ async function main() {
     const name = await newDoc({ preset: 'A5' });
     testDoc = name;
     let out = await call('create_paragraph_style', {
-      name: 'Typo', fontFamily: 'Helvetica Neue', fontStyle: 'Bold', fontSize: 11, hyphenation: false, composer: 'single-line', capitalization: 'all_caps',
+      name: 'Typo', fontFamily: FONT, fontStyle: 'Bold', fontSize: 11, hyphenation: false, composer: 'single-line', capitalization: 'all_caps',
       ligatures: false, openType: { figureStyle: 'proportional_oldstyle', discretionaryLigatures: true, slashedZero: true },
       hyphenateWordsLongerThan: 8, hyphenateAfterFirst: 3, hyphenateBeforeLast: 4, hyphenateLadderLimit: 2, hyphenateCapitalizedWords: false,
       keepWithNext: 1, keepWithPrevious: true, keepFirstLines: 2, keepLastLines: 2, tracking: 25, kerning: 'Optical', leftIndent: 4, firstLineIndent: 2,
@@ -1735,20 +1774,20 @@ async function main() {
     // fonts
     const all = await call('list_fonts', { limit: 5 });
     assert(/=== FONTS: \d+ of \d+ installed families ===/.test(all) && /\.\.\. \d+ more/.test(all), all);
-    const hel = await call('list_fonts', { search: 'helvetica neue' });
-    assert(/Helvetica Neue: .*\bBold\b/.test(hel), `families with their styles: ${hel}`);
-    const one = await call('list_fonts', { family: 'Helvetica Neue' });
-    assert(/^Helvetica Neue: /m.test(one) && (one.match(/^.+: /gm) || []).length >= 2, one);
-    const missing = await fails('list_fonts', { family: 'Helvetica Neu' }, /Font not installed: Helvetica Neu/);
-    assert(/Did you mean: Helvetica Neue \[/.test(missing), `suggestions in the error: ${missing}`);
-    const noStyle = await fails('create_paragraph_style', { name: 'T3', fontFamily: 'Helvetica Neue', fontStyle: 'Boldx' }, /has no style Boldx/);
+    const hel = await call('list_fonts', { search: FONT.toLowerCase() });
+    assert(new RegExp(`${FONT}: .*\\bBold\\b`).test(hel), `families with their styles: ${hel}`);
+    const one = await call('list_fonts', { family: FONT });
+    assert(new RegExp(`^${FONT}: `, 'm').test(one) && (one.match(/^.+: /gm) || []).length >= 2, one);
+    const missing = await fails('list_fonts', { family: FONT_TYPO }, new RegExp(`Font not installed: ${FONT_TYPO}`));
+    assert(new RegExp(`Did you mean: ${FONT} \\[`).test(missing), `suggestions in the error: ${missing}`);
+    const noStyle = await fails('create_paragraph_style', { name: 'T3', fontFamily: FONT, fontStyle: 'Boldx' }, /has no style Boldx/);
     assert(/Available styles: .*Bold/.test(noStyle), `the available styles are listed: ${noStyle}`);
-    const near = await fails('create_paragraph_style', { name: 'T3', fontFamily: 'Helvetica Neu', fontStyle: 'Bold' }, /Font not installed: Helvetica Neu \(Bold\)/);
-    assert(/Did you mean: Helvetica Neue/.test(near), near);
+    const near = await fails('create_paragraph_style', { name: 'T3', fontFamily: FONT_TYPO, fontStyle: 'Bold' }, new RegExp(`Font not installed: ${FONT_TYPO} \\(Bold\\)`));
+    assert(new RegExp(`Did you mean: ${FONT}`).test(near), near);
     await fails('create_text_frame', { content: 'x', fontFamily: 'Zzzz Unknown' }, /Font not installed: Zzzz Unknown.*Use list_fonts/);
     // "Family Style" written as one family name is understood
-    out = await call('create_paragraph_style', { name: 'T4', fontFamily: 'Helvetica Neue Bold' });
-    assert(/font=Helvetica Neue Bold/.test(out) && /fontStyle=Bold/.test(out), `"Helvetica Neue Bold" works as family + style: ${out}`);
+    out = await call('create_paragraph_style', { name: 'T4', fontFamily: `${FONT} Bold` });
+    assert(new RegExp(`font=${FONT} Bold`).test(out) && /fontStyle=Bold/.test(out), `"${FONT} Bold" works as family + style: ${out}`);
     await fails('list_fonts', { limit: 0 }, /limit must be/);
     await closeDoc(name);
     testDoc = flyer;
@@ -2011,7 +2050,12 @@ try {
     try { await call('close_document', { name, confirmDestructive: true }); } catch { /* already closed */ }
   }
   try { await client?.close(); } catch { /* ignore */ }
-  fs.rmSync(TMP, { recursive: true, force: true });
+  try {
+    fs.rmSync(TMP, { recursive: true, force: true });
+  } catch (e) {
+    // Windows: InDesign can still hold a file open (e.g. a placed image); leave it to the temp cleanup
+    console.log(`(could not remove ${TMP}: ${e.code})`);
+  }
 }
 
 const failed = results.filter((r) => !r.ok);

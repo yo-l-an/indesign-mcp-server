@@ -22,7 +22,7 @@ const { buildWrapper } = await import('../lib/script-runtime.js');
 const server = new InDesignMCPServer();
 let captured = [];
 server.executeInDesignScript = async (script) => { captured.push(script); return 'ok'; };
-server.executeAppleScript = async () => 'ok';
+server.launchJsx = async () => 'ok';
 
 const callHandler = server.server._requestHandlers.get('tools/call');
 const listHandler = server.server._requestHandlers.get('tools/list');

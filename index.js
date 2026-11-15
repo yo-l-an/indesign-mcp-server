@@ -14,6 +14,7 @@ import path from 'path';
 import os from 'os';
 import { fileURLToPath } from 'url';
 import { jsStr, jsJson, jsNum, jsEnum, appleScriptStr, describeOsascriptError, buildWrapper } from './lib/script-runtime.js';
+import * as windowsLauncher from './lib/launcher-windows.js';
 import { createExtraTools } from './tools/extra-tools.js';
 import { createVectorTools } from './tools/vector-tools.js';
 import { createGraphicsTools } from './tools/graphics-tools.js';
@@ -21,6 +22,7 @@ import { createResourceTools } from './tools/resource-tools.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const IS_WINDOWS = process.platform === 'win32';
 
 const PACKAGE_VERSION = (() => {
   try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8')).version; } catch { return '0.0.0'; }
@@ -43,9 +45,9 @@ export class InDesignMCPServer {
     // Security: Define allowed directories for file operations
     this.allowedDirectories = [
       os.homedir(), // User home directory
-      '/Users/Shared', // Shared directory
-      // Add more as needed via environment variable
-      ...(process.env.INDESIGN_ALLOWED_DIRS ? process.env.INDESIGN_ALLOWED_DIRS.split(':') : [])
+      IS_WINDOWS ? (process.env.PUBLIC || 'C:\\Users\\Public') : '/Users/Shared', // Shared directory
+      // Add more as needed via environment variable (separated by ':' on macOS, ';' on Windows)
+      ...(process.env.INDESIGN_ALLOWED_DIRS ? process.env.INDESIGN_ALLOWED_DIRS.split(path.delimiter).filter(Boolean) : [])
     ];
 
     // Tool modules contribute their own definitions and handlers
@@ -80,24 +82,33 @@ export class InDesignMCPServer {
       throw new Error('Invalid file path provided');
     }
 
+    // Windows: a colon after the drive letter addresses an NTFS alternate data stream
+    if (IS_WINDOWS && filePath.replace(/^[A-Za-z]:/, '').includes(':')) {
+      throw new Error(`Invalid file path: '${filePath}'`);
+    }
+
     // Resolve to an absolute path with symlinks resolved; this is the path that is used afterwards
     const resolvedPath = this.realPathOf(filePath);
 
     // Check if path is within allowed directories (also symlink-resolved)
-    const isAllowed = this.allowedDirectories.some(allowedDir => {
-      const resolvedAllowedDir = this.realPathOf(allowedDir);
-      return resolvedPath.startsWith(resolvedAllowedDir + path.sep) || resolvedPath === resolvedAllowedDir;
-    });
+    // Windows paths are case-insensitive
+    const fold = IS_WINDOWS ? (p) => p.toLowerCase() : (p) => p;
+    const within = (dir) => {
+      const d = fold(dir.replace(/[\\/]+$/, ''));
+      const p = fold(resolvedPath);
+      return p === d || p.startsWith(d + path.sep);
+    };
+    const isAllowed = this.allowedDirectories.some((allowedDir) => within(this.realPathOf(allowedDir)));
 
     if (!isAllowed) {
       throw new Error(`Access denied: Path '${filePath}' is outside allowed directories. Allowed: ${this.allowedDirectories.join(', ')}`);
     }
 
     // Prevent access to sensitive system files
-    const prohibitedPaths = ['/etc', '/private/etc', '/System', '/usr/bin', '/bin', '/sbin'];
-    const isProhibited = prohibitedPaths.some(prohibited =>
-      resolvedPath.startsWith(prohibited + path.sep) || resolvedPath === prohibited
-    );
+    const prohibitedPaths = IS_WINDOWS
+      ? [process.env.SystemRoot || 'C:\\Windows', process.env.ProgramFiles, process.env['ProgramFiles(x86)'], process.env.ProgramData].filter(Boolean)
+      : ['/etc', '/private/etc', '/System', '/usr/bin', '/bin', '/sbin'];
+    const isProhibited = prohibitedPaths.some(within);
 
     if (isProhibited) {
       throw new Error(`Access denied: Cannot access system directory '${resolvedPath}'`);
@@ -1112,13 +1123,21 @@ CAUTION: Only do this if you understand the risks and have verified the operatio
   //   2. an InDesign instance that is already running
   //   3. the newest "Adobe InDesign <year>.app" installed on disk
   //   4. a sensible default
+  // On Windows the name follows the COM ProgID (see comProgId).
   get appName() {
     if (!this._appName) this._appName = this.resolveAppName();
     return this._appName;
   }
 
+  // Windows: COM ProgID of the InDesign version to script (see lib/launcher-windows.js)
+  get comProgId() {
+    if (!this._comProgId) this._comProgId = windowsLauncher.resolveProgId();
+    return this._comProgId;
+  }
+
   resolveAppName() {
     if (process.env.INDESIGN_APP_NAME) return process.env.INDESIGN_APP_NAME;
+    if (IS_WINDOWS) return windowsLauncher.appNameForProgId(this.comProgId);
 
     try {
       const running = execSync(
@@ -1196,6 +1215,31 @@ CAUTION: Only do this if you understand the risks and have verified the operatio
     }
   }
 
+  // Start a generated .jsx in InDesign: AppleScript `do script` on macOS, COM DoScript on Windows.
+  // The launcher only contains the application and the script path, never user data.
+  async launchJsx(jsxFile) {
+    if (!IS_WINDOWS) {
+      return this.executeAppleScript(
+        `tell application ${appleScriptStr(this.appName)}\n` +
+        `  do script (POSIX file ${appleScriptStr(jsxFile)}) language javascript\n` +
+        `end tell`
+      );
+    }
+    const launcher = jsxFile.replace(/\.jsx$/, '.launcher.js');
+    fs.writeFileSync(launcher, windowsLauncher.launcherSource(this.comProgId, jsxFile), 'ascii');
+    // COM starts InDesign when it is not running; a cold start can take minutes, and InDesign
+    // stays slow for a while after it (fonts, plug-ins), so later calls get the long timeout too
+    if (!this._inDesignSeen && !windowsLauncher.isInDesignRunning()) this._coldStartAt = Date.now();
+    const warmingUp = this._coldStartAt && Date.now() - this._coldStartAt < 180000;
+    try {
+      const out = windowsLauncher.runLauncher(launcher, warmingUp ? 300000 : 60000);
+      this._inDesignSeen = true;
+      return out;
+    } finally {
+      fs.rmSync(launcher, { force: true });
+    }
+  }
+
   // Run ExtendScript in InDesign and return the script's last expression as a string.
   // Calls are serialised: InDesign handles one script at a time.
   executeInDesignScript(script) {
@@ -1214,12 +1258,7 @@ CAUTION: Only do this if you understand the risks and have verified the operatio
 
     let failure = null;
     try {
-      // The .jsx is started from a tiny AppleScript; no user data is part of it.
-      await this.executeAppleScript(
-        `tell application ${appleScriptStr(this.appName)}\n` +
-        `  do script (POSIX file ${appleScriptStr(jsxFile)}) language javascript\n` +
-        `end tell`
-      );
+      await this.launchJsx(jsxFile);
 
       if (!fs.existsSync(resultFile)) {
         return '(no return value)';

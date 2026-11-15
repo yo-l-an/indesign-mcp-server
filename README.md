@@ -43,7 +43,7 @@ A comprehensive **Model Context Protocol (MCP) server** for **Adobe InDesign aut
 ## 📋 Prerequisites
 
 - **Adobe InDesign 2026** (or compatible; the installed version is detected automatically, `INDESIGN_APP_NAME` overrides it)
-- **macOS** (required for AppleScript integration)
+- **macOS** (scripts are started through AppleScript) or **Windows** (scripts are started through InDesign's COM interface with the built-in Windows Script Host)
 - **Node.js 18+**
 - **MCP-compatible client** (like Claude Desktop)
 
@@ -77,9 +77,19 @@ Add the server to your MCP client configuration (e.g., Claude Desktop):
 }
 ```
 
+On Windows, use a Windows path with escaped backslashes, e.g. `"args": ["C:\\path\\to\\indesign-mcp-server\\index.js"]`.
+
+**Environment variables** (all optional):
+
+| Variable | Purpose |
+|---|---|
+| `INDESIGN_ALLOWED_DIRS` | Extra directories tools may read and write, besides your home folder and the shared folder (`/Users/Shared` on macOS, `C:\Users\Public` on Windows). Separate with `:` on macOS, `;` on Windows. |
+| `INDESIGN_APP_NAME` | InDesign version to script, e.g. `Adobe InDesign 2025`. On Windows the year selects the COM ProgID `InDesign.Application.2025`. |
+| `INDESIGN_COM_PROGID` | Windows only: exact COM ProgID, e.g. `InDesign.Application.2026`. Default: `InDesign.Application` (the newest registered version). |
+
 ### 4. Start Adobe InDesign
 
-Ensure Adobe InDesign is running before using the MCP server.
+Ensure Adobe InDesign is running before using the MCP server. (On Windows, the first tool call starts InDesign through COM if it is not running; that first call can take a minute or two.)
 
 ## 🎯 Quick Start
 
@@ -1160,7 +1170,7 @@ Place an image into an existing shape (path, rectangle, oval, polygon) which act
 
 #### `place_graphic`
 
-Place a vector graphic (.svg, .ai, .eps, .pdf) into a new frame (mm). Give width and height for a fixed frame, only one for the aspect ratio, or neither for the natural size. PDF/AI: pdfPage (default 1) and crop (pdf, art, trim, bleed, media, content_visible, content_all). Returns the frame id and whether the result is linked; embed: true unlinks and embeds it.
+Place a vector graphic (.svg, .ai, .eps, .pdf) into a new frame (mm). Give width and height for a fixed frame, only one for the aspect ratio, or neither for the natural size (SVG: taken from the root width/height, unitless and px as 1 px = 1 pt). PDF/AI: pdfPage (default 1) and crop (pdf, art, trim, bleed, media, content_visible, content_all). Returns the frame id and whether the result is linked; embed: true unlinks and embeds it.
 
 | Parameter | Type | Description |
 |---|---|---|
@@ -1448,8 +1458,8 @@ create_path_from_svg({
 
 ## Known limits
 
-- **macOS only** (AppleScript is used to start scripts in InDesign). The application name is detected automatically (a running InDesign first, then the newest `Adobe InDesign <year>.app` in `/Applications` or `~/Applications`, else `Adobe InDesign 2026`); set `INDESIGN_APP_NAME` to override it.
-- One script runs at a time; calls are queued. A modal dialog open in InDesign blocks all tools until it is closed (calls time out after 60 s).
+- **macOS and Windows.** On macOS the application name is detected automatically (a running InDesign first, then the newest `Adobe InDesign <year>.app` in `/Applications` or `~/Applications`, else `Adobe InDesign 2026`); set `INDESIGN_APP_NAME` to override it. On Windows the version-independent COM ProgID `InDesign.Application` is used (the newest registered version); set `INDESIGN_APP_NAME` or `INDESIGN_COM_PROGID` to pick another installed version.
+- One script runs at a time; calls are queued. A modal dialog open in InDesign blocks all tools until it is closed (calls time out after 60 s; on Windows, a call that has to start InDesign first gets 5 minutes).
 - Fonts must be installed: unknown fonts are an error (`Font not installed: ...`), not silently ignored.
 - Tool scripts run with InDesign's user interaction set to "never interact" (restored afterwards), so an invalid request produces a tool error instead of a modal dialog that would block InDesign.
 - Tests and tools act on the *active* document: do not open, close or switch documents in InDesign while a tool run or `npm test` is in progress.
@@ -1464,7 +1474,7 @@ create_path_from_svg({
 
 ## How scripts run
 
-Each tool generates ExtendScript, writes it to a temp `.jsx` file and runs it with `do script (POSIX file "...") language javascript`. The AppleScript is a fixed three-line wrapper; tool arguments never become part of AppleScript source. Arguments are validated against the tool's schema before use, and embedded in scripts only as JSON string literals (`jsStr`), checked numbers (`jsNum`) or checked identifiers (`jsEnum`). The script's last expression is captured with `eval`, so multi-line final expressions work.
+Each tool generates ExtendScript and writes it to a temp `.jsx` file. On macOS it is run with `do script (POSIX file "...") language javascript`; the AppleScript is a fixed three-line wrapper. On Windows a small JScript file run with `cscript` creates the `InDesign.Application` COM object and calls `DoScript(path, ScriptLanguage.JAVASCRIPT)` (see `lib/launcher-windows.js`). Tool arguments never become part of the AppleScript or JScript launcher. Arguments are validated against the tool's schema before use, and embedded in scripts only as JSON string literals (`jsStr`), checked numbers (`jsNum`) or checked identifiers (`jsEnum`). The script's last expression is captured with `eval`, so multi-line final expressions work.
 
 Errors are reported by number (`Code: 1234`) and never depend on InDesign's localised message text. Validation errors of the server itself (`No document open`, `Swatch not found: X`, `Paragraph style not found: X`, ...) are English and the same on every system.
 
@@ -1476,7 +1486,7 @@ Errors are reported by number (`Code: 1234`) and never depend on InDesign's loca
 - A PDF preset overrides `app.pdfExportPreferences` (bleed, slug); only `pageRange` is taken from the preferences.
 
 ### Debugging
-Scripts live in `$TMPDIR/indesign-mcp/`. A successful run deletes its script; a failed run **keeps** it and the error message ends with `[debug script: <path>]`. Kept scripts older than three days are removed automatically. Open the `.jsx` in the ExtendScript debugger, or run it with `osascript -e 'tell application "Adobe InDesign 2026" to do script (POSIX file "<path>") language javascript'`.
+Scripts live in `$TMPDIR/indesign-mcp/` (macOS) or `%TEMP%\indesign-mcp\` (Windows). A successful run deletes its script; a failed run **keeps** it and the error message ends with `[debug script: <path>]`. Kept scripts older than three days are removed automatically. Open the `.jsx` in the ExtendScript debugger, run it from InDesign's Scripts panel, or on macOS run it with `osascript -e 'tell application "Adobe InDesign 2026" to do script (POSIX file "<path>") language javascript'`.
 
 ## Testing
 
@@ -1485,6 +1495,10 @@ npm test
 ```
 
 `tests/run-tests.mjs` starts InDesign if it is not running, drives the server over MCP and asserts the results against scratch documents: A5 landscape flyer with styles, frames, image placement, rotate, delete, PDF export (Print, Web, HighQualityPrint, PressQuality, page range, bleed, slug) and PNG/JPEG export at 72/100/300 dpi, plus error handling. It only closes documents it created itself. `npm run docs` regenerates the tool reference above.
+
+`npm run test:offline` needs no InDesign: it checks the generated scripts and the argument handling (`test/`).
+
+The live tests run on macOS and Windows. They use Helvetica Neue (macOS) or Segoe UI (Windows) with one extra style (Medium / Semibold); set `INDESIGN_TEST_FONT` and `INDESIGN_TEST_FONT_STYLE` to use another installed family. Exact CMYK values are only checked when the document profile is PSO Coated v3; with other colour settings (for example Coated FOGRA39) the colour tests check plausible values instead. On Windows, the file-symlink check is skipped unless Developer Mode or admin rights allow symlinks.
 
 ## 💡 Use Cases
 
@@ -1543,7 +1557,8 @@ for (const file of files) {
 
 **"Adobe InDesign not found"**
 - Ensure InDesign is installed and running, or set `INDESIGN_APP_NAME` to its exact name if auto-detection picks the wrong one
-- Allow your MCP client to control InDesign in System Settings > Privacy & Security > Automation
+- macOS: allow your MCP client to control InDesign in System Settings > Privacy & Security > Automation
+- Windows: "not installed or not registered for scripting (COM error ...)" means the COM ProgID is missing. Check that `InDesign.Application` exists under `HKEY_CLASSES_ROOT`, set `INDESIGN_COM_PROGID` to a registered version, or repair the InDesign installation from the Creative Cloud app
 
 **"Script execution failed"**
 - Read the error: it carries the InDesign error code and, for unexpected failures, the path of the kept script (`[debug script: ...]`, see "Debugging")
