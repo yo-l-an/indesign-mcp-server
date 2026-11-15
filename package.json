@@ -7,10 +7,11 @@
   "scripts": {
     "start": "node index.js",
     "dev": "node --inspect index.js",
-    "test": "node tests/svg-path.test.mjs && node tests/script-syntax.mjs && node tests/run-tests.mjs",
+    "test": "node tests/svg-path.test.mjs && node tests/script-syntax.mjs && npm run test:injection && node tests/run-tests.mjs",
     "test:live": "node tests/run-tests.mjs",
-    "test:offline": "node tests/svg-path.test.mjs && node tests/script-syntax.mjs",
+    "test:offline": "node tests/svg-path.test.mjs && node tests/script-syntax.mjs && npm run test:injection",
     "test:scripts": "node tests/script-syntax.mjs",
+    "test:injection": "node --test test/scripts.test.mjs test/injection.test.mjs",
     "docs": "node scripts/generate-tool-docs.mjs"
   },
   "keywords": [
