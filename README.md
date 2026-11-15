@@ -42,7 +42,7 @@ A comprehensive **Model Context Protocol (MCP) server** for **Adobe InDesign aut
 
 ## 📋 Prerequisites
 
-- **Adobe InDesign 2026** (or compatible; set `INDESIGN_APP_NAME` for another version)
+- **Adobe InDesign 2026** (or compatible; the installed version is detected automatically, `INDESIGN_APP_NAME` overrides it)
 - **macOS** (required for AppleScript integration)
 - **Node.js 18+**
 - **MCP-compatible client** (like Claude Desktop)
@@ -1448,7 +1448,7 @@ create_path_from_svg({
 
 ## Known limits
 
-- **macOS only** (AppleScript is used to start scripts in InDesign). The application name defaults to `Adobe InDesign 2026`; set `INDESIGN_APP_NAME` for other versions.
+- **macOS only** (AppleScript is used to start scripts in InDesign). The application name is detected automatically (a running InDesign first, then the newest `Adobe InDesign <year>.app` in `/Applications` or `~/Applications`, else `Adobe InDesign 2026`); set `INDESIGN_APP_NAME` to override it.
 - One script runs at a time; calls are queued. A modal dialog open in InDesign blocks all tools until it is closed (calls time out after 60 s).
 - Fonts must be installed: unknown fonts are an error (`Font not installed: ...`), not silently ignored.
 - Tool scripts run with InDesign's user interaction set to "never interact" (restored afterwards), so an invalid request produces a tool error instead of a modal dialog that would block InDesign.
@@ -1542,7 +1542,7 @@ for (const file of files) {
 ### Common Issues
 
 **"Adobe InDesign not found"**
-- Ensure InDesign is installed and running, and that `INDESIGN_APP_NAME` matches its name (default `Adobe InDesign 2026`)
+- Ensure InDesign is installed and running, or set `INDESIGN_APP_NAME` to its exact name if auto-detection picks the wrong one
 - Allow your MCP client to control InDesign in System Settings > Privacy & Security > Automation
 
 **"Script execution failed"**

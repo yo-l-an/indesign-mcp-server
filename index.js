@@ -1107,8 +1107,60 @@ CAUTION: Only do this if you understand the risks and have verified the operatio
     return this._scriptDir;
   }
 
+  // Installed InDesign application name (e.g. "Adobe InDesign 2026"), resolved once:
+  //   1. INDESIGN_APP_NAME env override
+  //   2. an InDesign instance that is already running
+  //   3. the newest "Adobe InDesign <year>.app" installed on disk
+  //   4. a sensible default
   get appName() {
-    return process.env.INDESIGN_APP_NAME || 'Adobe InDesign 2026';
+    if (!this._appName) this._appName = this.resolveAppName();
+    return this._appName;
+  }
+
+  resolveAppName() {
+    if (process.env.INDESIGN_APP_NAME) return process.env.INDESIGN_APP_NAME;
+
+    try {
+      const running = execSync(
+        `osascript -e 'tell application "System Events" to get name of (processes whose name starts with "Adobe InDesign")'`,
+        { encoding: 'utf8', timeout: 10000, stdio: ['ignore', 'pipe', 'ignore'] }
+      ).trim();
+      if (running) return running.split(',')[0].trim();
+    } catch {
+      // System Events unavailable or nothing running: fall through
+    }
+
+    const candidates = [];
+    for (const base of ['/Applications', path.join(os.homedir(), 'Applications')]) {
+      let entries;
+      try {
+        entries = fs.readdirSync(base);
+      } catch {
+        continue;
+      }
+      for (const entry of entries) {
+        if (!/^Adobe InDesign/.test(entry)) continue;
+        if (/\.app$/.test(entry)) {
+          candidates.push(entry.replace(/\.app$/, ''));
+          continue;
+        }
+        // Adobe usually nests the .app inside a versioned folder
+        try {
+          for (const inner of fs.readdirSync(path.join(base, entry))) {
+            if (/^Adobe InDesign.*\.app$/.test(inner)) candidates.push(inner.replace(/\.app$/, ''));
+          }
+        } catch {
+          // not a directory or unreadable
+        }
+      }
+    }
+    if (candidates.length) {
+      const ver = (n) => parseInt((n.match(/\d+/) || [0])[0], 10) || 0;
+      candidates.sort((a, b) => ver(b) - ver(a));
+      return candidates[0];
+    }
+
+    return 'Adobe InDesign 2026';
   }
 
   // Remove kept debug scripts older than three days
