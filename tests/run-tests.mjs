@@ -510,7 +510,7 @@ async function main() {
     eq(numAfter(edited, 'paragraphs'), 1, 'one paragraph after <br>');
     const edited2 = await call('edit_text_frame', { frameId: idOf(spaced), content: 'X\nY', lineBreak: 'forced' });
     eq(numAfter(edited2, 'paragraphs'), 1, 'lineBreak forced in edit_text_frame');
-    for (const o of [p, f, br, spaced]) await call('delete_object', { id: idOf(o) });
+    for (const o of [p, f, br, spaced]) await call('delete_object', { id: idOf(o), confirmDestructive: true });
   });
 
   await test('forced line breaks are visible in an exported image', async () => {
@@ -537,7 +537,7 @@ async function main() {
     assert(new RegExp(`id=${id}\\b[^\\n]*overflows=true`).test(await call('list_text_frames')), 'list_text_frames reports overflow');
     const fixed = await call('edit_text_frame', { frameId: id, content: 'Short' });
     assert(/overflows=false/.test(fixed), fixed);
-    await call('delete_object', { id });
+    await call('delete_object', { id, confirmDestructive: true });
   });
 
   await test('edit_text_frame replaces the whole story', async () => {
@@ -550,7 +550,7 @@ async function main() {
     assert(/Original length: 1 characters/.test(text), text);
     const t = await call('get_text_content', { frameId: id });
     assert(/Paragraphs: 1/.test(t), t);
-    await call('delete_object', { id });
+    await call('delete_object', { id, confirmDestructive: true });
   });
 
   await test('frame ids are stable while the list order changes', async () => {
@@ -565,7 +565,7 @@ async function main() {
     assert(/second/.test(await call('get_text_content', { frameId: b })), 'other frame untouched');
     await fails('edit_text_frame', { frameId: 999999, content: 'x' }, /No object with id/);
     await fails('edit_text_frame', { frameIndex: 99, content: 'x' }, /Invalid index/);
-    await call('delete_object', { id: a }); await call('delete_object', { id: b });
+    await call('delete_object', { id: a, confirmDestructive: true }); await call('delete_object', { id: b, confirmDestructive: true });
   });
 
   console.log('\nMarkdown');
@@ -600,7 +600,7 @@ async function main() {
     await fails('insert_markdown_text', { frameId: frame, markdownText: '**x**', styleMap: { bold: 'No Such Style' } }, /Missing styles/);
     eq(await call('get_text_content', { frameId: frame, normalizeSpaces: false }), before, 'a failed insert changes nothing');
     await fails('insert_markdown_text', { frameId: frame, markdownText: '   \n\n' }, /no text/);
-    await call('delete_object', { id: frame });
+    await call('delete_object', { id: frame, confirmDestructive: true });
   });
 
   console.log('\nCharacter styles, overrides');
@@ -619,7 +619,7 @@ async function main() {
     assert(new RegExp(`id=${id}\\b[^\\n]*size=30pt`).test(await call('list_text_frames')), 'local override applied');
     await call('clear_overrides', { frameId: id });
     assert(new RegExp(`id=${id}\\b[^\\n]*size=10pt`).test(await call('list_text_frames')), 'override removed, style size back');
-    await call('delete_object', { id });
+    await call('delete_object', { id, confirmDestructive: true });
   });
 
   console.log('\nObjects');
@@ -685,10 +685,10 @@ async function main() {
     await fails('ungroup', { id: back }, /not a group/);
     await fails('group_objects', { ids: [back] }, /at least 2/);
 
-    const del = await call('delete_object', { id: front });
+    const del = await call('delete_object', { id: front, confirmDestructive: true });
     assert(/Deleted: Oval/.test(del), del);
     assert(!new RegExp(`id=${front}\\b`).test(await call('list_page_items', {})), 'deleted object is gone');
-    await fails('delete_object', { id: front }, /No object with id/);
+    await fails('delete_object', { id: front, confirmDestructive: true }, /No object with id/);
   });
 
   await test('set_text_frame_options and page-relative coordinates on page 2', async () => {
@@ -702,7 +702,7 @@ async function main() {
     await call('set_text_frame_options', { id, autosize: 'HEIGHT_ONLY' });
     await fails('set_text_frame_options', { id }, /No options/);
     await fails('set_text_frame_options', { id, autosize: 'BOGUS' }, /Invalid autosize|Invalid parameter "autosize"/);
-    await call('delete_object', { id });
+    await call('delete_object', { id, confirmDestructive: true });
   });
 
   console.log('\nImages');
@@ -727,12 +727,12 @@ async function main() {
       const tl = shot.px(2, 2), br = shot.px(shot.w - 3, shot.h - 3);
       assert(tl[0] < 60 && tl[1] < 60 && br[0] > 190 && br[1] > 190, `natural-size image fills its frame: top-left ${tl}, bottom-right ${br}`);
     }
-    await call('delete_object', { id: idOf(out) });
+    await call('delete_object', { id: idOf(out), confirmDestructive: true });
     await fails('place_image', { imagePath: path.join(TMP, 'missing.png') }, /not found/);
     await fails('place_image', { imagePath: '/etc/hosts' }, /Access denied/);
     await fails('place_image', { imagePath: png, fitOption: 'BOGUS' }, /Invalid fitOption|Invalid parameter "fitOption"/);
     assert(numAfter(await call('get_document_info'), 'Rectangles \\(incl\\. image frames\\)') >= 5, 'image frames exist');
-    for (const id of [a, b, c, d]) await call('delete_object', { id });
+    for (const id of [a, b, c, d]) await call('delete_object', { id, confirmDestructive: true });
   });
 
   console.log('\nExport');
@@ -740,7 +740,11 @@ async function main() {
     // content so the pages are not empty
     await call('create_text_frame', { content: 'PDF test', paragraphStyle: 'Title', x: 10, y: 10, width: 100, height: 20 });
     await call('create_text_frame', { content: 'Page two', paragraphStyle: 'Title', pageIndex: 1, x: 10, y: 10, width: 100, height: 20 });
-    await fails('export_pdf', { filePath: path.join(outDir, 'x.pdf') }, /confirm/i);
+    // a new file needs no confirmation; writing over an existing one does
+    const fresh = path.join(outDir, 'new.pdf');
+    fs.rmSync(fresh, { force: true });
+    assert(/exported/i.test(await call('export_pdf', { filePath: fresh })) && fs.existsSync(fresh), 'new file without confirmation');
+    await fails('export_pdf', { filePath: fresh }, /confirm/i);
     for (const preset of ['Print', 'Web', 'HighQualityPrint', 'PressQuality']) {
       const file = path.join(outDir, `${preset}.pdf`);
       const out = await call('export_pdf', { filePath: file, preset, confirmDestructive: true });
@@ -887,7 +891,7 @@ async function main() {
     await call('analyze_text_problems', { frameIndex: 0 });
     assert(/EMBEDDED OBJECTS ANALYSIS/.test(await call('analyze_embedded_objects', { frameId: t })), 'analyze_embedded_objects accepts frameId');
     await fails('analyze_embedded_objects', { frameId: 999999 }, /No object with id/);
-    await call('delete_object', { id: t });
+    await call('delete_object', { id: t, confirmDestructive: true });
   });
 
 
@@ -905,7 +909,7 @@ async function main() {
     eq(inspect(`var t = app.activeDocument.pageItems.itemByID(${frame}).tables[0]; return t.rows[0].cells[0].contents + "|" + t.rows[1].cells[0].contents;`), 'H1|body', 'includeHeaders=false starts below the header row');
     await fails('populate_table', { tableIndex: 5, data: [['x']] }, /Table index 5 not found/);
     await fails('create_table', { x: 0, y: 0, width: 50, height: 20, rows: 1, columns: 2, headerRows: 1 }, /at least/);
-    await call('delete_object', { id: frame });
+    await call('delete_object', { id: frame, confirmDestructive: true });
   });
 
   await test('typography fixes keep the formatting (GREP, not story rewrites)', async () => {
@@ -924,7 +928,7 @@ async function main() {
     const again = await call('fix_typography_in_selection', { frameId: id });
     assert(/No typography issues found/.test(again), `second run finds nothing: ${again}`);
     assert(/No typography issues|Total/.test(await call('find_typography_issues', { frameId: id })), 'find_typography_issues runs');
-    await call('delete_object', { id });
+    await call('delete_object', { id, confirmDestructive: true });
     inspect('app.activeDocument.textPreferences.typographersQuotes = true; return true;');
   });
 
@@ -940,7 +944,7 @@ async function main() {
     eq(inspect(`var s = app.activeDocument.pageItems.itemByID(${id}).parentStory; var i = s.contents.indexOf("Freunde"); return s.characters[i].appliedCharacterStyle.name + "," + Math.round(s.characters[0].pointSize);`), 'Italic,10', 'character style kept, local size override cleared');
     assert(/No issues found/.test(await call('clean_imported_text', { frameId: id, fixFormatting: false })), 'second run is clean');
     await call('analyze_text_problems', { frameId: id });
-    await call('delete_object', { id });
+    await call('delete_object', { id, confirmDestructive: true });
   });
 
   await test('character and object styles: validation, zero values, cleanup', async () => {
@@ -967,7 +971,7 @@ async function main() {
     assert(/applied to stroke/.test(out), out);
     await fails('apply_color', { objectId: rect, swatchName: 'NoSuchSwatch' }, /Swatch not found/);
     await fails('apply_color', { objectIndex: 999, swatchName: 'Orange' }, /Invalid index/);
-    await call('delete_object', { id: rect });
+    await call('delete_object', { id: rect, confirmDestructive: true });
   });
 
   await test('layers, zoom, find/replace scopes report clear errors', async () => {
@@ -1034,11 +1038,12 @@ async function main() {
       var dm = d.dataMergeProperties; dm.selectDataSource(File(${JSON.stringify(csv)})); var st = tf.parentStory;
       d.dataMergeTextPlaceholders.add(st, st.insertionPoints[-1].index, dm.dataMergeFields[0]); return "ok";`);
     const out = path.join(TMP, 'merged');
-    await fails('data_merge', { dataSourcePath: csv, outputFolder: out }, /confirm/i);
-    let r = await call('data_merge', { dataSourcePath: csv, outputFolder: out, confirmDestructive: true });
+    fs.rmSync(out, { recursive: true, force: true });
+    let r = await call('data_merge', { dataSourcePath: csv, outputFolder: out });   // a new folder needs no confirmation
     const pdf = path.join(out, `${name.replace(/\.indd$/i, '')}_merged.pdf`);
     assert(/Data merge completed/.test(r) && fs.existsSync(pdf), r);
     eq(pdfBoxes(pdf).pages, 3, 'one page per record');
+    await fails('data_merge', { dataSourcePath: csv, outputFolder: out }, /confirm/i);   // the folder now holds files
     r = await call('data_merge', { dataSourcePath: csv, outputFolder: out, recordRange: '1-2', confirmDestructive: true });
     eq(pdfBoxes(pdf).pages, 2, 'record range 1-2 gives two pages');
     r = await call('data_merge', { dataSourcePath: csv, outputFolder: out, recordRange: '3', fileFormat: 'BOTH', confirmDestructive: true });
@@ -1101,7 +1106,7 @@ async function main() {
     near(info.y + info.h, Y(50), 0.01, 'bottom edge');
     const full = await call('get_object_info', { id: band });
     assert(/fill: BandGreen \[CMYK 85,10,100,20\]/.test(full) && /opacity=85/.test(full), `object info shows swatch values and opacity: ${full}`);
-    await call('delete_object', { id: band });
+    await call('delete_object', { id: band, confirmDestructive: true });
   });
 
   await test('create_path -> edit_path_points read: the same points come back (within 0.01 mm)', async () => {
@@ -1132,7 +1137,7 @@ async function main() {
     await fails('create_path', { points: [{ x: 1, y: 1 }, { x: 2, y: 2, pointType: 'wobbly' }] }, /Invalid pointType/);
     await fails('create_path', { points: [{ x: 1, y: 1 }, { x: 2, y: 2 }], fill: 'NoSuchSwatch' }, /Swatch not found/);
     assert(!/label=|NoSuch/.test((await call('list_page_items', { pageIndex: 0 })).split('\n').filter((l) => /label=undefined/.test(l)).join('')), 'no stray object after a failed create');
-    await call('delete_object', { id }); await call('delete_object', { id: idOf(open) });
+    await call('delete_object', { id, confirmDestructive: true }); await call('delete_object', { id: idOf(open), confirmDestructive: true });
   });
 
   await test('edit_path_points: add, move, delete, set_type, reverse, set_closed', async () => {
@@ -1168,7 +1173,7 @@ async function main() {
     await fails('edit_path_points', { id, action: 'delete', pointIndex: 0 }, /needs at least 3/);
     const text = idOf(await call('create_text_frame', { content: 'x', y: 150 }));
     await fails('edit_path_points', { id: text }, /has no editable path/);
-    await call('delete_object', { id: text }); await call('delete_object', { id });
+    await call('delete_object', { id: text, confirmDestructive: true }); await call('delete_object', { id, confirmDestructive: true });
   });
 
   await test('compound paths from SVG data and edit of a rectangle\'s points', async () => {
@@ -1182,7 +1187,7 @@ async function main() {
     const rect = idOf(await call('create_rectangle', { x: 100, y: 150, width: 30, height: 20 }));
     const grown = readPoints(await call('edit_path_points', { id: rect, action: 'add', pointIndex: 2, point: { x: 130, y: 190 } }));
     eq(grown.length, 5, 'rectangles are editable paths too');
-    await call('delete_object', { id }); await call('delete_object', { id: rect });
+    await call('delete_object', { id, confirmDestructive: true }); await call('delete_object', { id: rect, confirmDestructive: true });
   });
 
   await test('create_line and create_polygon', async () => {
@@ -1206,12 +1211,12 @@ async function main() {
       const g = geo(await call('get_object_info', { id: idOf(o) }));
       near(g.x + g.w / 2, 50, 1.2, `${label} is centred`);
       assert(g.w <= 40.01 && g.h <= 40.01 && g.w > 30, `${label} fits its circle: ${g.w} x ${g.h}`);
-      await call('delete_object', { id: idOf(o) });
+      await call('delete_object', { id: idOf(o), confirmDestructive: true });
     }
     await fails('create_polygon', { x: 0, y: 0, radius: 5, sides: 2 }, /sides must be/);
     await fails('create_polygon', { x: 0, y: 0, radius: 5, innerRadiusRatio: 1.5 }, /between 0 and 1/);
     await fails('create_polygon', { x: 0, y: 0, radius: 0 }, /radius must be/);
-    await call('delete_object', { id: line }); await call('delete_object', { id: idOf(out) });
+    await call('delete_object', { id: line, confirmDestructive: true }); await call('delete_object', { id: idOf(out), confirmDestructive: true });
   });
 
   await test('convert_shape and set_corner_options', async () => {
@@ -1230,7 +1235,7 @@ async function main() {
     await fails('set_corner_options', { id: rect }, /Pass option/);
     await fails('set_corner_options', { id: rect, corners: { middle: { option: 'rounded' } } }, /Unknown corner/);
     await fails('convert_shape', { id: rect, to: 'blob' }, /Invalid parameter "to"/);
-    await call('delete_object', { id: rect });
+    await call('delete_object', { id: rect, confirmDestructive: true });
   });
 
   await test('pathfinder: subtract, union, intersect, exclude_overlap, minus_back', async () => {
@@ -1246,31 +1251,31 @@ async function main() {
     const g = geo(await call('get_object_info', { id: sub }));
     near(g.x, 10, 0.01, 'result keeps the rectangle bounds'); near(g.w, 60, 0.01, 'width 60');
     await fails('get_object_info', { id: b }, /No object with id/);
-    await call('delete_object', { id: sub });
+    await call('delete_object', { id: sub, confirmDestructive: true });
 
     [a, b] = await fresh();
     out = await call('pathfinder', { operation: 'union', ids: [a, b] });
     assert(/points=9 /.test(out), `union: ${out}`);
     const u = geo(await call('get_object_info', { id: idOf(out.match(/Result: (.*)/)[1]) }));
     near(u.x + u.w, 90, 0.01, 'union reaches the far side of the circle');
-    await call('delete_object', { id: idOf(out.match(/Result: (.*)/)[1]) });
+    await call('delete_object', { id: idOf(out.match(/Result: (.*)/)[1]), confirmDestructive: true });
 
     [a, b] = await fresh();
     out = await call('pathfinder', { operation: 'intersect', ids: [a, b] });
     const i = geo(await call('get_object_info', { id: idOf(out.match(/Result: (.*)/)[1]) }));
     near(i.x, 60, 0.01, 'intersection starts at the circle'); near(i.x + i.w, 70, 0.01, 'and ends at the rectangle edge');
-    await call('delete_object', { id: idOf(out.match(/Result: (.*)/)[1]) });
+    await call('delete_object', { id: idOf(out.match(/Result: (.*)/)[1]), confirmDestructive: true });
 
     [a, b] = await fresh();
     out = await call('pathfinder', { operation: 'exclude_overlap', ids: [a, b] });
     assert(/paths=2/.test(out), `exclude overlap leaves two sub-paths: ${out}`);
-    await call('delete_object', { id: idOf(out.match(/Result: (.*)/)[1]) });
+    await call('delete_object', { id: idOf(out.match(/Result: (.*)/)[1]), confirmDestructive: true });
 
     [a, b] = await fresh();   // b (the circle) is in front
     out = await call('pathfinder', { operation: 'minus_back', ids: [a, b] });
     const mb = geo(await call('get_object_info', { id: idOf(out.match(/Result: (.*)/)[1]) }));
     near(mb.x, 70, 0.01, 'minus_back keeps the frontmost shape (the circle) minus the rectangle behind it'); near(mb.x + mb.w, 90, 0.01, 'right edge of the circle');
-    await call('delete_object', { id: idOf(out.match(/Result: (.*)/)[1]) });
+    await call('delete_object', { id: idOf(out.match(/Result: (.*)/)[1]), confirmDestructive: true });
 
     [a, b] = await fresh();
     const far = idOf(await call('create_ellipse', { x: 120, y: 120, width: 10, height: 10 }));
@@ -1279,7 +1284,7 @@ async function main() {
     await fails('pathfinder', { operation: 'subtract', ids: [a, 999999] }, /No object with id/);
     const t = idOf(await call('create_text_frame', { content: 'x', y: 170 }));
     await fails('pathfinder', { operation: 'union', ids: [a, t] }, /no path|cannot be used/);
-    for (const id of [a, b, far, t]) { try { await call('delete_object', { id }); } catch { /* consumed */ } }
+    for (const id of [a, b, far, t]) { try { await call('delete_object', { id, confirmDestructive: true }); } catch { /* consumed */ } }
   });
 
   await test('set_object_fill / set_object_stroke change objects in place (stacking order unchanged)', async () => {
@@ -1316,7 +1321,7 @@ async function main() {
     await fails('set_object_stroke', { id: ids[0], alignment: 'sideways' }, /Invalid parameter "alignment"/);
     await fails('set_object_stroke', { id: ids[0], dashStyle: 'Nope' }, /Stroke style not found/);
     await fails('set_object_fill', { id: 999999, swatch: 'Accent' }, /No object with id/);
-    for (const id of [...ids, tf]) await call('delete_object', { id });
+    for (const id of [...ids, tf]) await call('delete_object', { id, confirmDestructive: true });
   });
 
   await test('gradients: create_gradient_swatch, apply with angle, gradient feather', async () => {
@@ -1342,7 +1347,7 @@ async function main() {
     assert(/gradientFeather/.test(await call('get_object_info', { id: rect })), 'get_object_info lists the effect');
     await call('set_gradient_feather', { id: rect, remove: true });
     assert(/effects: none/.test(await call('get_object_info', { id: rect })), 'and it can be removed');
-    await call('delete_object', { id: rect });
+    await call('delete_object', { id: rect, confirmDestructive: true });
   });
 
   await test('place_image_in_shape: an image clipped by an editable shape', async () => {
@@ -1358,7 +1363,7 @@ async function main() {
     const t = idOf(await call('create_text_frame', { content: 'x', y: 150 }));
     await fails('place_image_in_shape', { shapeId: t, imagePath: png }, /cannot be used as a mask/);
     await fails('place_image_in_shape', { shapeId: 999999, imagePath: png }, /No object with id/);
-    await call('delete_object', { id: star }); await call('delete_object', { id: t });
+    await call('delete_object', { id: star, confirmDestructive: true }); await call('delete_object', { id: t, confirmDestructive: true });
   });
 
   await test('duplicate_object, align_objects, distribute_objects', async () => {
@@ -1398,7 +1403,7 @@ async function main() {
     await call('distribute_objects', { ids: d, distribution: 'vertical_centers' });
     await fails('distribute_objects', { ids: d, distribution: 'left_edges', spacing: 3 }, /spacing only applies/);
     await fails('distribute_objects', { ids: [d[0]], distribution: 'left_edges' }, /at least 2/);
-    for (const id of [r, ...copies, ...d]) await call('delete_object', { id });
+    for (const id of [r, ...copies, ...d]) await call('delete_object', { id, confirmDestructive: true });
   });
 
   await test('get_object_info: path, group, effects, styles', async () => {
@@ -1411,7 +1416,7 @@ async function main() {
     const g = await call('get_object_info', { id: grp });
     assert(/Group/.test(g) && new RegExp(`members: ${a}, ${b}|members: ${b}, ${a}`).test(g), `group lists its members: ${g}`);
     await call('ungroup', { id: grp });
-    await call('delete_object', { id: a }); await call('delete_object', { id: b });
+    await call('delete_object', { id: a, confirmDestructive: true }); await call('delete_object', { id: b, confirmDestructive: true });
     await fails('get_object_info', { id: 424242 }, /No object with id/);
   });
 
@@ -1425,7 +1430,7 @@ async function main() {
     near(g.x, 10, 0.01, 'the tool still works in millimetres');
     eq(units(), before, 'points and spread origin are restored after the script');
     inspect('var v = app.activeDocument.viewPreferences; v.horizontalMeasurementUnits = MeasurementUnits.MILLIMETERS; v.verticalMeasurementUnits = MeasurementUnits.MILLIMETERS; v.rulerOrigin = RulerOrigin.PAGE_ORIGIN; return "ok";');
-    await call('delete_object', { id });
+    await call('delete_object', { id, confirmDestructive: true });
     await closeDoc(vec);
     testDoc = flyer;
   });
@@ -1541,7 +1546,7 @@ async function main() {
     await call('create_rectangle', { x: 0, y: 0, width: 148, height: 210, fillColor: 'PdfBlue', pageIndex: 1 });
     const pdf = path.join(TMP, 'two-pages.pdf');
     await call('export_pdf', { filePath: pdf, confirmDestructive: true });
-    const clean = async () => { for (const p of [0, 1]) for (const it of (await call('list_page_items', { pageIndex: p, type: 'Rectangle' })).matchAll(/Rectangle id=(\d+)[^\n]*image=/g)) await call('delete_object', { id: Number(it[1]) }); };
+    const clean = async () => { for (const p of [0, 1]) for (const it of (await call('list_page_items', { pageIndex: p, type: 'Rectangle' })).matchAll(/Rectangle id=(\d+)[^\n]*image=/g)) await call('delete_object', { id: Number(it[1]), confirmDestructive: true }); };
     const centre = async (id) => { const c = await callRaw('render_preview', { objectId: id }); const png = readPng(Buffer.from(c.find((x) => x.type === 'image').data, 'base64')); return png.px(png.w >> 1, png.h >> 1); };
     await clean();
     const target = await newDoc({ preset: 'A5' });
@@ -1744,14 +1749,14 @@ async function main() {
     assert(/\(built-in/.test(list), 'built-in swatches are marked');
     assert(!/used:/.test(await call('list_color_swatches', { includeUsage: false })), 'includeUsage false skips the scan');
     // delete
-    await fails('delete_color_swatch', { name: 'Brand2 Spot' }, /used by 2 fill\(s\).*replaceWith/);
-    out = await call('delete_color_swatch', { name: 'Brand2 Spot', replaceWith: 'Other' });
+    await fails('delete_color_swatch', { name: 'Brand2 Spot', confirmDestructive: true }, /used by 2 fill\(s\).*replaceWith/);
+    out = await call('delete_color_swatch', { name: 'Brand2 Spot', replaceWith: 'Other', confirmDestructive: true });
     assert(/deleted \(2 use\(s\) replaced\)/.test(out), out);
     assert(/fill: Other/.test(await call('get_object_info', { id: rect })), 'the replacement swatch took its place');
-    await fails('delete_color_swatch', { name: 'Brand2 Spot' }, /Swatch not found/);
-    await fails('delete_color_swatch', { name: 'Other', replaceWith: 'Other' }, /different swatch/);
+    await fails('delete_color_swatch', { name: 'Brand2 Spot', confirmDestructive: true }, /Swatch not found/);
+    await fails('delete_color_swatch', { name: 'Other', replaceWith: 'Other', confirmDestructive: true }, /different swatch/);
     await call('set_object_fill', { ids: [rect, other], swatch: 'none' });
-    out = await call('delete_color_swatch', { name: 'Other' });
+    out = await call('delete_color_swatch', { name: 'Other', confirmDestructive: true });
     assert(/deleted\./.test(out), `an unused swatch needs no replacement: ${out}`);
     await closeDoc(name);
     testDoc = flyer;
@@ -2027,7 +2032,7 @@ async function main() {
     for (const [tool, args] of [
       ['create_paragraph_style', { name: 'X' }], ['create_text_frame', { content: 'x' }], ['apply_paragraph_style', { styleName: 'X', frameIndex: 0 }],
       ['edit_text_frame', { frameIndex: 0, content: 'x' }], ['list_text_frames', {}], ['create_rectangle', { x: 0, y: 0, width: 1, height: 1 }],
-      ['list_page_items', {}], ['delete_object', { id: 1 }], ['get_document_info', {}], ['create_color_swatch', { name: 'X', colorValues: [0, 0, 0, 0] }],
+      ['list_page_items', {}], ['delete_object', { id: 1, confirmDestructive: true }], ['get_document_info', {}], ['create_color_swatch', { name: 'X', colorValues: [0, 0, 0, 0] }],
       ['export_pdf', { filePath: path.join(TMP, 'a.pdf'), confirmDestructive: true }],
       ['create_path', { points: [{ x: 0, y: 0 }, { x: 10, y: 10 }] }], ['create_path_from_svg', { d: 'M0 0 L10 10 L0 10 Z' }],
       ['edit_path_points', { id: 1 }], ['create_line', { x1: 0, y1: 0, x2: 5, y2: 5 }], ['create_polygon', { x: 10, y: 10, radius: 5 }],
@@ -2037,7 +2042,7 @@ async function main() {
       ['align_objects', { ids: [1, 2], alignment: 'left' }], ['distribute_objects', { ids: [1, 2, 3], distribution: 'left_edges' }], ['get_object_info', { id: 1 }],
       ['render_preview', {}], ['measure_text', { frameIndex: 0 }], ['place_graphic', { filePath: path.join(TMP, 'logo.svg') }],
       ['create_graphic_from_svg', { svg: SVG_MARKUP }], ['create_cmyk_pdf_shape', { shapes: [{ d: 'M0 0 L10 10 L0 10 Z', fill: [0, 0, 0, 100] }] }],
-      ['update_color_swatch', { name: 'X', colorValues: [0, 0, 0, 0] }], ['delete_color_swatch', { name: 'X' }], ['list_color_swatches', {}],
+      ['update_color_swatch', { name: 'X', colorValues: [0, 0, 0, 0] }], ['delete_color_swatch', { name: 'X', confirmDestructive: true }], ['list_color_swatches', {}],
       ['set_object_opacity', { id: 1, opacity: 50 }], ['rotate_object', { id: 1, angle: 5 }], ['group_objects', { ids: [1, 2] }], ['list_open_documents_dummy', null],
     ].filter(([tool]) => tool !== 'list_open_documents_dummy')) {
       await fails(tool, args, /No document open/);

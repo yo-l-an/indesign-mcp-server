@@ -9,7 +9,7 @@ Read `GUIDE.md` before the first change: it is the workflow to follow (scope →
 ## Working on the server
 
 - `GUIDE.md` is served to agents verbatim: update it with every tool change or fix, and edit it with the `writing-for-agents` skill (steps with completion criteria, positive phrasing, one source of truth).
-- Every tool lives in a `tools/*-tools.js` module: its definition (schema + `modifies: true | false`) and its handler sit together; `lib/registry.js` lists, validates and calls them, and `index.js` only wires modules, the executor and the workflow reminder. A new tool = one entry in one module.
+- Every tool lives in a `tools/*-tools.js` module: its definition (schema + `modifies: true | false`, plus `paths` / `destructive` / `overwrites` for files and confirmations, applied by `lib/policy.js`) and its handler sit together; `lib/registry.js` lists, validates and calls them, and `index.js` only wires modules, the executor and the workflow reminder. A new tool = one entry in one module.
 - After changing tool schemas: `npm run docs` (README tool reference).
 - Tests: `npm run test:offline` needs no InDesign. `npm test` drives a running InDesign; set `INDESIGN_APP_NAME` (e.g. `"Adobe InDesign 2027"`) when the installed version is not the default.
 - `tools/source-tools.js` reads client files (`read_source_document`, `read_feedback`) with `lib/docx.js` (Word, on `lib/xml-lite.js`) and `lib/pdf-source.js` (PDF via `pdfjs-dist`, the only runtime dependency besides the MCP SDK).

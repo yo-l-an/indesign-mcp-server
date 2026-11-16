@@ -61,6 +61,7 @@ export function createExtraTools(server) {
     {
       name: 'delete_object',
       modifies: true,
+      destructive: 'deletes an object from the document',
       description: 'Delete a text frame, rectangle, ellipse, image frame or group',
       inputSchema: { type: 'object', properties: { ...OBJECT_PROPS } },
     },

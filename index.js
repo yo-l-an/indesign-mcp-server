@@ -10,7 +10,6 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
 import { fileURLToPath } from 'url';
 import { jsStr, jsJson, jsNum, jsEnum } from './lib/script-runtime.js';
 import { createExecutor } from './lib/executor.js';
@@ -26,10 +25,10 @@ import { createStyleTools } from './tools/style-tools.js';
 import { createShapeTools } from './tools/shape-tools.js';
 import { createExportTools } from './tools/export-tools.js';
 import { createRegistry } from './lib/registry.js';
+import { createPolicy } from './lib/policy.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const IS_WINDOWS = process.platform === 'win32';
 
 const PACKAGE_VERSION = (() => {
   try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8')).version; } catch { return '0.0.0'; }
@@ -51,13 +50,8 @@ export class InDesignMCPServer {
       }
     );
 
-    // Security: Define allowed directories for file operations
-    this.allowedDirectories = [
-      os.homedir(), // User home directory
-      IS_WINDOWS ? (process.env.PUBLIC || 'C:\\Users\\Public') : '/Users/Shared', // Shared directory
-      // Add more as needed via environment variable (separated by ':' on macOS, ';' on Windows)
-      ...(process.env.INDESIGN_ALLOWED_DIRS ? process.env.INDESIGN_ALLOWED_DIRS.split(path.delimiter).filter(Boolean) : [])
-    ];
+    // Which files tools may touch and when a call must be confirmed (lib/policy.js)
+    this.policy = createPolicy();
 
     // Every tool lives in a module that declares its schema, traits and handler (lib/registry.js)
     this.workflow = { guideRead: false, prepared: false, reminded: false, backups: new Set(), lastSnapshot: null };
@@ -65,102 +59,13 @@ export class InDesignMCPServer {
       createReviewTools(this), createSourceTools(this),
       createDocumentTools(this), createTextTools(this), createStyleTools(this), createShapeTools(this), createExportTools(this),
       createExtraTools(this), createVectorTools(this), createGraphicsTools(this), createResourceTools(this),
-    ]);
+    ], { policy: this.policy });
     this.setupToolHandlers();
   }
 
-  // Security: Path validation to prevent directory traversal
-  // Resolve symlinks of the deepest existing ancestor, so a link inside an allowed directory
-  // cannot lead outside it. The not-yet-existing tail is appended unchanged.
-  realPathOf(target) {
-    let existing = path.resolve(target);
-    const tail = [];
-    while (!fs.existsSync(existing)) {
-      const parent = path.dirname(existing);
-      if (parent === existing) break;
-      tail.unshift(path.basename(existing));
-      existing = parent;
-    }
-    let real;
-    try { real = fs.realpathSync(existing); } catch { real = existing; }
-    return path.join(real, ...tail);
-  }
-
-  // Security: Path validation to prevent directory traversal (also through symlinks)
+  // Computed paths (backup folders, review files) go through the same policy as tool arguments
   validateFilePath(filePath) {
-    if (!filePath || typeof filePath !== 'string') {
-      throw new Error('Invalid file path provided');
-    }
-
-    // Windows: a colon after the drive letter addresses an NTFS alternate data stream
-    if (IS_WINDOWS && filePath.replace(/^[A-Za-z]:/, '').includes(':')) {
-      throw new Error(`Invalid file path: '${filePath}'`);
-    }
-
-    // Resolve to an absolute path with symlinks resolved; this is the path that is used afterwards
-    const resolvedPath = this.realPathOf(filePath);
-
-    // Check if path is within allowed directories (also symlink-resolved)
-    // Windows paths are case-insensitive
-    const fold = IS_WINDOWS ? (p) => p.toLowerCase() : (p) => p;
-    const within = (dir) => {
-      const d = fold(dir.replace(/[\\/]+$/, ''));
-      const p = fold(resolvedPath);
-      return p === d || p.startsWith(d + path.sep);
-    };
-    const isAllowed = this.allowedDirectories.some((allowedDir) => within(this.realPathOf(allowedDir)));
-
-    if (!isAllowed) {
-      throw new Error(`Access denied: Path '${filePath}' is outside allowed directories. Allowed: ${this.allowedDirectories.join(', ')}`);
-    }
-
-    // Prevent access to sensitive system files
-    const prohibitedPaths = IS_WINDOWS
-      ? [process.env.SystemRoot || 'C:\\Windows', process.env.ProgramFiles, process.env['ProgramFiles(x86)'], process.env.ProgramData].filter(Boolean)
-      : ['/etc', '/private/etc', '/System', '/usr/bin', '/bin', '/sbin'];
-    const isProhibited = prohibitedPaths.some(within);
-
-    if (isProhibited) {
-      throw new Error(`Access denied: Cannot access system directory '${resolvedPath}'`);
-    }
-
-    return resolvedPath;
-  }
-
-  // Security: User confirmation for destructive operations
-  requireUserConfirmation(operation, target, details = '') {
-    const warningMessage = `
-⚠️  DESTRUCTIVE OPERATION WARNING ⚠️
-
-Operation: ${operation}
-Target: ${target}
-${details ? `Details: ${details}` : ''}
-
-This operation may:
-- Overwrite existing files
-- Permanently delete data
-- Modify system files
-
-Type 'CONFIRM' to proceed or 'CANCEL' to abort:`;
-
-    // In a real implementation, this would show a dialog or CLI prompt
-    // For MCP context, we throw an error requiring explicit confirmation
-    throw new McpError(
-      ErrorCode.InvalidRequest,
-      `Security confirmation required for destructive operation: ${operation} on ${target}. 
-      
-Add 'confirmDestructive: true' parameter to bypass this safety check.
-      
-CAUTION: Only do this if you understand the risks and have verified the operation details.`
-    );
-  }
-
-  // Security: Check if user has explicitly confirmed destructive operation
-  validateDestructiveOperation(args, operation, target) {
-    if (!args.confirmDestructive) {
-      this.requireUserConfirmation(operation, target);
-    }
-    // User has explicitly confirmed - proceed with operation
+    return this.policy.resolvePath(filePath);
   }
 
   setupToolHandlers() {

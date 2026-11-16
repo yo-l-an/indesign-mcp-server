@@ -128,6 +128,7 @@ Read the message: it names the next step (valid page names, missing parameter, w
 - `No object with id N` → the object changed; `find_text` or `list_page_items` on that page gives the current id.
 - `Paragraph style not found` / `Swatch not found` → `list_styles` / `list_color_swatches`; create a new one only when the PM wants it.
 - `Security confirmation required` → add `confirmDestructive: true` only for an action the PM asked for.
+- `use an absolute path` / `outside the allowed folders` → pass the full path (`/Users/...` or `~/...`) of a file inside the user's folders; the message lists them.
 - `… [debug script: path]` → an unexpected InDesign failure: report it with the path to the PM and stop that step.
 
 ### New documents

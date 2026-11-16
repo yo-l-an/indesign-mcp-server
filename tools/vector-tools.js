@@ -324,6 +324,7 @@ export function createVectorTools(server) {
     {
       name: 'place_image_in_shape',
       modifies: true,
+      paths: ['imagePath'],
       description: 'Place an image into an existing shape (path, rectangle, oval, polygon) which acts as the mask. fitOption FILL_PROPORTIONALLY (crop to fill, default), PROPORTIONALLY, CONTENT_TO_FRAME, CENTER_CONTENT or NONE; then optional contentOffsetX/Y (mm) and contentScale (%). Returns the shape id.',
       inputSchema: {
         type: 'object',
@@ -831,7 +832,7 @@ export function createVectorTools(server) {
   };
 
   handlers.place_image_in_shape = async (args) => {
-    const validated = server.validateFilePath(args.imagePath);
+    const validated = args.imagePath;
     const fit = has(args.fitOption) ? args.fitOption : 'FILL_PROPORTIONALLY';
     const fits = { FILL_PROPORTIONALLY: 'FitOptions.FILL_PROPORTIONALLY', PROPORTIONALLY: 'FitOptions.PROPORTIONALLY', CONTENT_TO_FRAME: 'FitOptions.CONTENT_TO_FRAME', CENTER_CONTENT: 'FitOptions.CENTER_CONTENT', NONE: null };
     if (!(fit in fits)) throw new Error(`Invalid fitOption: ${fit}`);

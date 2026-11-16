@@ -31,6 +31,7 @@ export function createResourceTools(server) {
     {
       name: 'delete_color_swatch',
       modifies: true,
+      destructive: 'deletes a swatch',
       description: 'Delete a swatch. If objects or styles use it you must say what replaces it (replaceWith: a swatch name, or "none"); the error lists how it is used.',
       inputSchema: {
         type: 'object',

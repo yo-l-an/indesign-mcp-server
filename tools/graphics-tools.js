@@ -143,6 +143,7 @@ export function createGraphicsTools(server) {
     {
       name: 'place_graphic',
       modifies: true,
+      paths: ['filePath'],
       description: 'Place a vector graphic (.svg, .ai, .eps, .pdf) into a new frame (mm). Give width and height for a fixed frame, only one for the aspect ratio, or neither for the natural size (SVG: taken from the root width/height, unitless and px as 1 px = 1 pt). PDF/AI: pdfPage (default 1) and crop (pdf, art, trim, bleed, media, content_visible, content_all). Returns the frame id and whether the result is linked; embed: true unlinks and embeds it.',
       inputSchema: {
         type: 'object',
@@ -158,6 +159,8 @@ export function createGraphicsTools(server) {
     {
       name: 'create_graphic_from_svg',
       modifies: true,
+      paths: ['saveTo'],
+      overwrites: 'saveTo',
       description: 'Place SVG markup (a string) as a vector graphic: the server writes it to a temp .svg under $TMPDIR/indesign-mcp/svg/ (or to saveTo) and places it like place_graphic. Use it as the fallback when a native path cannot express something (text as outlines, complex filters). LIMITS: the result is NOT editable as paths in InDesign, and the RGB colours of the SVG are converted to CMYK only at output, through the CMYK profile of the document (accurate, but you cannot dictate exact CMYK numbers). For exact CMYK values use create_path_from_svg with swatches, or create_cmyk_pdf_shape. With embed: true the graphic is embedded and the temp file deleted; otherwise it stays linked to the file (temp files are removed after 3 days). External references, scripts, entities and external url() in the SVG are rejected.',
       inputSchema: {
         type: 'object',
@@ -172,6 +175,8 @@ export function createGraphicsTools(server) {
     {
       name: 'create_cmyk_pdf_shape',
       modifies: true,
+      paths: ['saveTo'],
+      overwrites: 'saveTo',
       description: 'Generate a small vector PDF with EXACT CMYK fill/stroke values from SVG path data and place it (like place_graphic). Use it for logos or multi-colour shapes when you need exact brand CMYK numbers (the SVG route converts RGB through the profile) and native paths (create_path_from_svg with one swatch per colour) do not fit. The result is a linked or embedded graphic, not an editable path.',
       inputSchema: {
         type: 'object',
@@ -334,7 +339,7 @@ export function createGraphicsTools(server) {
   // ---- place_graphic ----------------------------------------------------------------------
   // trusted: the path was produced by the server itself (temp file); user paths are validated first.
   const placeGraphic = async (args, trustedPath) => {
-    const file = trustedPath || server.validateFilePath(args.filePath);
+    const file = trustedPath || args.filePath;
     const ext = path.extname(file).toLowerCase();
     if (!VECTOR_EXTENSIONS.includes(ext)) throw new Error(`Unsupported file type ${ext || '(none)'}: place_graphic handles ${VECTOR_EXTENSIONS.join(', ')} (use place_image for bitmaps)`);
     const fit = has(args.fitOption) ? args.fitOption : 'PROPORTIONALLY';
@@ -413,7 +418,7 @@ export function createGraphicsTools(server) {
     fs.mkdirSync(dir, { recursive: true });
     return path.join(dir, `${subdir}_${Date.now()}_${rand()}${ext}`);
   };
-  const target = (args, subdir, ext) => (has(args.saveTo) ? server.validateFilePath(args.saveTo) : tempFile(subdir, ext));
+  const target = (args, subdir, ext) => (has(args.saveTo) ? args.saveTo : tempFile(subdir, ext));
 
   handlers.create_graphic_from_svg = async (args) => {
     validateSvgMarkup(args.svg);

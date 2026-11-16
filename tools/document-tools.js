@@ -39,6 +39,7 @@ export function createDocumentTools(server) {
     {
       name: 'open_document',
       modifies: false,
+      paths: ['filePath'],
       description: 'Open an existing InDesign document',
       inputSchema: {
         type: 'object',
@@ -51,6 +52,7 @@ export function createDocumentTools(server) {
     {
       name: 'save_document',
       modifies: false,
+      paths: ['filePath'],
       description: 'Save a document (the active one, or the one named by "name"). Without filePath: a plain save (a document that was never saved needs a filePath). With filePath: Save As, the same document is renamed and stays open; the document\'s own file (same path) is just a plain save; overwriting a DIFFERENT existing file needs confirmDestructive. Saving to the file of another open document is refused.',
       inputSchema: {
         type: 'object',
@@ -90,12 +92,13 @@ export function createDocumentTools(server) {
     {
       name: 'delete_page',
       modifies: true,
+      destructive: 'deletes a page and everything on it',
       description: 'Delete a page from the document',
       inputSchema: {
         type: 'object',
         properties: {
           pageIndex: { type: 'number', description: 'Page index to delete' },
-          confirmDestructive: { type: 'boolean', description: 'REQUIRED: Confirm page deletion', default: false },
+          confirmDestructive: { type: 'boolean', description: 'Must be true: the page and its content are deleted', default: false },
         },
         required: ['pageIndex'],
       },
@@ -188,6 +191,8 @@ export function createDocumentTools(server) {
     {
       name: 'data_merge',
       modifies: true,
+      paths: ['dataSourcePath', 'outputFolder'],
+      overwrites: 'outputFolder',
       description: 'Merge the active document (which needs data field placeholders) with a CSV/TXT data source. Writes ONE merged file per format into outputFolder: <document>_merged.pdf and/or <document>_merged.indd',
       inputSchema: {
         type: 'object',
@@ -196,7 +201,7 @@ export function createDocumentTools(server) {
           outputFolder: { type: 'string', description: 'Output folder (created if missing)' },
           fileFormat: { type: 'string', enum: ['INDD', 'PDF', 'BOTH'], default: 'PDF' },
           recordRange: { type: 'string', description: 'Records: "all", a single number ("3") or a range ("1-10")', default: 'all' },
-          confirmDestructive: { type: 'boolean', description: 'REQUIRED: Confirm bulk file creation', default: false },
+          confirmDestructive: { type: 'boolean', description: 'Required only when the output folder already holds files', default: false },
         },
         required: ['dataSourcePath', 'outputFolder'],
       },
@@ -385,8 +390,7 @@ export function createDocumentTools(server) {
     async openDocument(args) {
       const { filePath } = args;
     
-      // Security: Validate file path
-      const validatedPath = this.validateFilePath(filePath);
+      const validatedPath = filePath;
     
       const script = `
         try {
@@ -409,8 +413,8 @@ export function createDocumentTools(server) {
     async saveDocument(args) {
       const { filePath, name, confirmDestructive = false } = args;
 
-      // Security: the target must be inside the allowed folders (symlinks resolved)
-      const validatedPath = filePath ? this.validateFilePath(filePath) : null;
+      // filePath is already resolved and checked by the policy (lib/policy.js)
+      const validatedPath = filePath || null;
       if (validatedPath && !/\.ind[dt]$/i.test(validatedPath)) throw new Error('filePath must end with .indd (or .indt for a template)');
 
       const script = `
@@ -518,9 +522,6 @@ export function createDocumentTools(server) {
 
     async deletePage(args) {
       const { pageIndex } = args;
-    
-      // Security: Require confirmation for page deletion
-      this.validateDestructiveOperation(args, 'DELETE PAGE', `page ${pageIndex + 1} and all its content`);
     
       const script = `
         if (app.documents.length === 0) {
@@ -708,12 +709,9 @@ export function createDocumentTools(server) {
     async dataMerge(args) {
       const { dataSourcePath, outputFolder, fileFormat = 'PDF', recordRange = 'all' } = args;
 
-      // Security: Require confirmation for bulk file creation
-      this.validateDestructiveOperation(args, 'DATA MERGE', `${outputFolder} (creates merged files)`);
-
-      // Security: Validate both data source and output paths
-      const validatedDataSource = this.validateFilePath(dataSourcePath);
-      const validatedOutputFolder = this.validateFilePath(outputFolder);
+      // both paths are already resolved and checked by the policy (lib/policy.js)
+      const validatedDataSource = dataSourcePath;
+      const validatedOutputFolder = outputFolder;
       if (!['PDF', 'INDD', 'BOTH'].includes(fileFormat)) throw new Error(`Invalid fileFormat: ${fileFormat} (use PDF, INDD or BOTH)`);
 
       const range = String(recordRange).trim().toLowerCase();

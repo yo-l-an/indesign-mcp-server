@@ -70,7 +70,7 @@ const sample = (key, spec, mode) => {
   switch (spec.type) {
     case 'string':
       if (spec.enum) return mode === 'last' ? spec.enum[spec.enum.length - 1] : spec.enum[0];
-      if (/path|folder/i.test(key)) return path.join(TMP, /folder/i.test(key) ? 'out' : 'file.pdf');
+      if (/path|folder|Dir$/i.test(key)) return path.join(TMP, /folder|Dir$/i.test(key) ? 'out' : 'file.pdf');
       if (/hex/i.test(key)) return '#FF6600';
       if (/^(recordRange|pageRange)$/.test(key)) return '1-2';
       return NASTY;

@@ -9,7 +9,9 @@ export function createExportTools(server) {
     {
       name: 'export_pdf',
       modifies: false,
-      description: 'Export the active document as PDF. preset: Print/HighQualityPrint = [High Quality Print], Web/SmallestFileSize = [Smallest File Size], PressQuality = [Press Quality], PDFX1a/PDFX3/PDFX4 = the PDF/X presets, or the exact name of any PDF preset in InDesign. includeBleed uses the document bleed; includeSlug the slug. Overwrites the file, so confirmDestructive is required.',
+      paths: ['filePath'],
+      overwrites: 'filePath',
+      description: 'Export the active document as PDF. preset: Print/HighQualityPrint = [High Quality Print], Web/SmallestFileSize = [Smallest File Size], PressQuality = [Press Quality], PDFX1a/PDFX3/PDFX4 = the PDF/X presets, or the exact name of any PDF preset in InDesign. includeBleed uses the document bleed; includeSlug the slug. Overwriting an existing file needs confirmDestructive.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -18,7 +20,7 @@ export function createExportTools(server) {
           pageRange: { type: 'string', description: 'Pages, e.g. "1", "2-3", "1,3-5" or "all"', default: 'all' },
           includeBleed: { type: 'boolean', description: 'Use the document bleed', default: false },
           includeSlug: { type: 'boolean', description: 'Include the slug area', default: false },
-          confirmDestructive: { type: 'boolean', description: 'REQUIRED: Confirm file overwrite', default: false },
+          confirmDestructive: { type: 'boolean', description: 'Required only when the file already exists (it is overwritten)', default: false },
         },
         required: ['filePath'],
       },
@@ -26,6 +28,8 @@ export function createExportTools(server) {
     {
       name: 'export_images',
       modifies: false,
+      paths: ['folderPath'],
+      overwrites: 'folderPath',
       description: 'Export pages as PNG or JPEG, one file per page: <folder>/<documentname>_page<N>.<ext>. The folder is created if missing. Returns the list of files written.',
       inputSchema: {
         type: 'object',
@@ -35,7 +39,7 @@ export function createExportTools(server) {
           resolution: { type: 'number', description: 'Export resolution in dpi (e.g. 72, 100, 300)', default: 300 },
           pageRange: { type: 'string', description: 'Pages, e.g. "1", "2-3", "1,3-5" or "all"', default: 'all' },
           includeBleed: { type: 'boolean', description: 'Include the document bleed', default: false },
-          confirmDestructive: { type: 'boolean', description: 'REQUIRED: Confirm folder write access', default: false },
+          confirmDestructive: { type: 'boolean', description: 'Required only when the folder already holds files', default: false },
         },
         required: ['folderPath'],
       },
@@ -43,6 +47,8 @@ export function createExportTools(server) {
     {
       name: 'export_epub',
       modifies: false,
+      paths: ['filePath'],
+      overwrites: 'filePath',
       description: 'Export document as EPUB',
       inputSchema: {
         type: 'object',
@@ -50,7 +56,7 @@ export function createExportTools(server) {
           filePath: { type: 'string', description: 'Output EPUB file path' },
           version: { type: 'string', enum: ['EPUB2', 'EPUB3'], default: 'EPUB3' },
           imageFormat: { type: 'string', enum: ['AUTOMATIC', 'PNG', 'JPEG', 'GIF'], description: 'Image conversion', default: 'AUTOMATIC' },
-          confirmDestructive: { type: 'boolean', description: 'REQUIRED: Confirm file overwrite', default: false },
+          confirmDestructive: { type: 'boolean', description: 'Required only when the file already exists (it is overwritten)', default: false },
         },
         required: ['filePath'],
       },
@@ -58,6 +64,8 @@ export function createExportTools(server) {
     {
       name: 'package_document',
       modifies: false,
+      paths: ['folderPath'],
+      overwrites: 'folderPath',
       description: 'Package document for print production',
       inputSchema: {
         type: 'object',
@@ -66,7 +74,7 @@ export function createExportTools(server) {
           includeLinkedFiles: { type: 'boolean', description: 'Include linked files', default: true },
           includeFonts: { type: 'boolean', description: 'Include fonts', default: true },
           createReport: { type: 'boolean', description: 'Create packaging report', default: true },
-          confirmDestructive: { type: 'boolean', description: 'REQUIRED: Confirm package creation', default: false },
+          confirmDestructive: { type: 'boolean', description: 'Required only when the folder already holds files', default: false },
         },
         required: ['folderPath'],
       },
@@ -116,11 +124,7 @@ export function createExportTools(server) {
     async exportPDF(args) {
       const { filePath, preset = 'HighQualityPrint', pageRange = 'all', includeBleed = false, includeSlug = false } = args;
 
-      // Security: Require confirmation for file export
-      this.validateDestructiveOperation(args, 'EXPORT PDF', filePath);
-
-      // Security: Validate file path
-      const validatedPath = this.validateFilePath(filePath);
+      const validatedPath = filePath;
       this.parsePageRange(pageRange); // validate early
 
       const aliases = {
@@ -192,11 +196,7 @@ export function createExportTools(server) {
     async exportImages(args) {
       const { folderPath, format = 'PNG', resolution = 300, pageRange = 'all', includeBleed = false } = args;
 
-      // Security: Require confirmation for folder write
-      this.validateDestructiveOperation(args, 'EXPORT IMAGES', folderPath);
-
-      // Security: Validate folder path
-      const validatedPath = this.validateFilePath(folderPath);
+      const validatedPath = folderPath;
       const fmt = String(format).toUpperCase();
       if (!['PNG', 'JPEG', 'JPG'].includes(fmt)) throw new Error(`Invalid format: ${format} (use PNG or JPEG)`);
       const dpi = this.jsNum(resolution, 'resolution');
@@ -245,11 +245,7 @@ export function createExportTools(server) {
     async exportEPUB(args) {
       const { filePath, version = 'EPUB3', imageFormat = 'AUTOMATIC' } = args;
 
-      // Security: Require confirmation for file export
-      this.validateDestructiveOperation(args, 'EXPORT EPUB', filePath);
-
-      // Security: Validate file path
-      const validatedPath = this.validateFilePath(filePath);
+      const validatedPath = filePath;
       if (!['EPUB2', 'EPUB3'].includes(version)) throw new Error(`Invalid version: ${version}`);
       if (!['AUTOMATIC', 'PNG', 'JPEG', 'GIF'].includes(imageFormat)) throw new Error(`Invalid imageFormat: ${imageFormat}`);
 
@@ -272,11 +268,7 @@ export function createExportTools(server) {
     async packageDocument(args) {
       const { folderPath, includeLinkedFiles = true, includeFonts = true, createReport = true } = args;
 
-      // Security: Require confirmation for package creation
-      this.validateDestructiveOperation(args, 'PACKAGE DOCUMENT', folderPath);
-
-      // Security: Validate folder path
-      const validatedPath = this.validateFilePath(folderPath);
+      const validatedPath = folderPath;
 
       const script = `
         var doc = __requireDoc();

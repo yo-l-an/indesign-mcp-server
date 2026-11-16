@@ -169,7 +169,7 @@ export_pdf({
   filePath: "/path/to/output.pdf",
   preset: "HighQualityPrint",
   includeBleed: true,
-  confirmDestructive: true   // export overwrites files, so it must be confirmed
+  confirmDestructive: true   // only needed when the file already exists
 })
 ```
 
@@ -198,7 +198,10 @@ New swatches default to **CMYK** (0-100). `hex` or RGB values are converted to C
 - `export_pdf` uses a temporary copy of the chosen PDF preset so that `includeBleed` / `includeSlug` really take effect (InDesign presets otherwise override them). Preset aliases: `Print` / `HighQualityPrint` = `[High Quality Print]`, `Web` / `SmallestFileSize` = `[Smallest File Size]`, `PressQuality`, `PDFX1a`, `PDFX3`, `PDFX4`; any other value is looked up as the exact preset name (your own presets work too). The output folder is created if missing.
 - **Page numbers are positions.** In `pageRange` (`export_images`, `export_pdf`) and `pageIndex`, page 1 is the first page of the document, whatever the page *names* are. Custom numbering (starting at 5), sections that restart numbering and repeated page names cannot change the meaning: positions are sent to InDesign as absolute page numbers (`+2`, `+1-+3`). Notations: `all`, `2`, `2-3`, `1,3-5`.
 - `export_images` writes `<document>_page<N>.png|jpg` per page (N = the position) at the requested dpi and lists every file it wrote and the pages it exported.
-- Both tools overwrite files and therefore require `confirmDestructive: true`.
+- Writing over an existing file (or into a folder that already holds files) needs `confirmDestructive: true`; a new file does not.
+
+### Files and confirmations
+One policy (`lib/policy.js`) checks every file argument before a tool runs: paths are absolute (or `~/...`), inside your home folder, the shared folder or `INDESIGN_ALLOWED_DIRS`, never a system folder, with symlinks resolved. A tool that deletes (`delete_page`, `delete_object`, `delete_color_swatch`, `restore_backup`) always needs `confirmDestructive: true`; a tool that writes files needs it only when the target already exists.
 
 ### Saving
 - `save_document` without `filePath` is a plain save of the active document (or of the one named by `name`). A document that was never saved gets a clear message asking for `filePath`.
@@ -413,7 +416,7 @@ Delete a page from the document
 | Parameter | Type | Description |
 |---|---|---|
 | `pageIndex` *(required)* | number | Page index to delete |
-| `confirmDestructive` | boolean | REQUIRED: Confirm page deletion Default: `false`. |
+| `confirmDestructive` | boolean | Must be true: the page and its content are deleted Default: `false`. |
 
 #### `duplicate_page`
 
@@ -1144,6 +1147,7 @@ Delete a text frame, rectangle, ellipse, image frame or group
 | `id` | number | Stable object id (from create_* tools, place_image or list_page_items). Preferred. |
 | `pageIndex` | number | Page index (0-based); used with index Default: `0`. |
 | `index` | number | Position in list_page_items for that page (changes when objects are added/reordered) |
+| `confirmDestructive` | boolean | Confirm an action that deletes or overwrites (only when the user asked for it) Default: `false`. |
 
 #### `duplicate_object`
 
@@ -1325,6 +1329,7 @@ Place SVG markup (a string) as a vector graphic: the server writes it to a temp 
 | `fitOption` | `PROPORTIONALLY` \| `FILL_PROPORTIONALLY` \| `CONTENT_TO_FRAME` \| `FRAME_TO_CONTENT` \| `CENTER_CONTENT` \| `NONE` | How the graphic fits the frame (with width and height): PROPORTIONALLY = fit inside, FILL_PROPORTIONALLY = crop to fill Default: `"PROPORTIONALLY"`. |
 | `embed` | boolean | Unlink and embed the graphic in the document Default: `false`. |
 | `saveTo` | string | Optional: keep the .svg at this path (inside the allowed folders) instead of a temp file |
+| `confirmDestructive` | boolean | Confirm an action that deletes or overwrites (only when the user asked for it) Default: `false`. |
 
 #### `create_cmyk_pdf_shape`
 
@@ -1342,6 +1347,7 @@ Generate a small vector PDF with EXACT CMYK fill/stroke values from SVG path dat
 | `fitOption` | `PROPORTIONALLY` \| `FILL_PROPORTIONALLY` \| `CONTENT_TO_FRAME` \| `FRAME_TO_CONTENT` \| `CENTER_CONTENT` \| `NONE` | How the graphic fits the frame (with width and height): PROPORTIONALLY = fit inside, FILL_PROPORTIONALLY = crop to fill Default: `"PROPORTIONALLY"`. |
 | `embed` | boolean | Unlink and embed the generated PDF (recommended: the temp file is removed afterwards) Default: `true`. |
 | `saveTo` | string | Optional: keep the generated .pdf at this path instead of a temp file |
+| `confirmDestructive` | boolean | Confirm an action that deletes or overwrites (only when the user asked for it) Default: `false`. |
 
 ### Colour
 
@@ -1384,6 +1390,7 @@ Delete a swatch. If objects or styles use it you must say what replaces it (repl
 |---|---|---|
 | `name` *(required)* | string | Name of the swatch to delete |
 | `replaceWith` | string | Swatch that takes its place where it is used, or "none" |
+| `confirmDestructive` | boolean | Confirm an action that deletes or overwrites (only when the user asked for it) Default: `false`. |
 
 #### `list_color_swatches`
 
@@ -1475,7 +1482,7 @@ _No parameters._
 
 #### `export_pdf`
 
-Export the active document as PDF. preset: Print/HighQualityPrint = [High Quality Print], Web/SmallestFileSize = [Smallest File Size], PressQuality = [Press Quality], PDFX1a/PDFX3/PDFX4 = the PDF/X presets, or the exact name of any PDF preset in InDesign. includeBleed uses the document bleed; includeSlug the slug. Overwrites the file, so confirmDestructive is required.
+Export the active document as PDF. preset: Print/HighQualityPrint = [High Quality Print], Web/SmallestFileSize = [Smallest File Size], PressQuality = [Press Quality], PDFX1a/PDFX3/PDFX4 = the PDF/X presets, or the exact name of any PDF preset in InDesign. includeBleed uses the document bleed; includeSlug the slug. Overwriting an existing file needs confirmDestructive.
 
 | Parameter | Type | Description |
 |---|---|---|
@@ -1484,7 +1491,7 @@ Export the active document as PDF. preset: Print/HighQualityPrint = [High Qualit
 | `pageRange` | string | Pages, e.g. "1", "2-3", "1,3-5" or "all" Default: `"all"`. |
 | `includeBleed` | boolean | Use the document bleed Default: `false`. |
 | `includeSlug` | boolean | Include the slug area Default: `false`. |
-| `confirmDestructive` | boolean | REQUIRED: Confirm file overwrite Default: `false`. |
+| `confirmDestructive` | boolean | Required only when the file already exists (it is overwritten) Default: `false`. |
 
 #### `export_images`
 
@@ -1497,7 +1504,7 @@ Export pages as PNG or JPEG, one file per page: <folder>/<documentname>_page<N>.
 | `resolution` | number | Export resolution in dpi (e.g. 72, 100, 300) Default: `300`. |
 | `pageRange` | string | Pages, e.g. "1", "2-3", "1,3-5" or "all" Default: `"all"`. |
 | `includeBleed` | boolean | Include the document bleed Default: `false`. |
-| `confirmDestructive` | boolean | REQUIRED: Confirm folder write access Default: `false`. |
+| `confirmDestructive` | boolean | Required only when the folder already holds files Default: `false`. |
 
 #### `export_epub`
 
@@ -1508,7 +1515,7 @@ Export document as EPUB
 | `filePath` *(required)* | string | Output EPUB file path |
 | `version` | `EPUB2` \| `EPUB3` |  Default: `"EPUB3"`. |
 | `imageFormat` | `AUTOMATIC` \| `PNG` \| `JPEG` \| `GIF` | Image conversion Default: `"AUTOMATIC"`. |
-| `confirmDestructive` | boolean | REQUIRED: Confirm file overwrite Default: `false`. |
+| `confirmDestructive` | boolean | Required only when the file already exists (it is overwritten) Default: `false`. |
 
 #### `package_document`
 
@@ -1520,7 +1527,7 @@ Package document for print production
 | `includeLinkedFiles` | boolean | Include linked files Default: `true`. |
 | `includeFonts` | boolean | Include fonts Default: `true`. |
 | `createReport` | boolean | Create packaging report Default: `true`. |
-| `confirmDestructive` | boolean | REQUIRED: Confirm package creation Default: `false`. |
+| `confirmDestructive` | boolean | Required only when the folder already holds files Default: `false`. |
 
 #### `preflight_document`
 
@@ -1541,7 +1548,7 @@ Merge the active document (which needs data field placeholders) with a CSV/TXT d
 | `outputFolder` *(required)* | string | Output folder (created if missing) |
 | `fileFormat` | `INDD` \| `PDF` \| `BOTH` |  Default: `"PDF"`. |
 | `recordRange` | string | Records: "all", a single number ("3") or a range ("1-10") Default: `"all"`. |
-| `confirmDestructive` | boolean | REQUIRED: Confirm bulk file creation Default: `false`. |
+| `confirmDestructive` | boolean | Required only when the output folder already holds files Default: `false`. |
 
 ### Utilities
 

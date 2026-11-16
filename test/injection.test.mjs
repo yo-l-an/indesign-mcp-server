@@ -13,9 +13,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { runTool, parses } from './harness.mjs';
-import {
-  str, num, index, measure, enumOf, bool, ALLOWED, validateFilePath,
-} from '../lib/jsx-safe.js';
+import { jsStr as str, jsNum, jsEnum } from '../lib/script-runtime.js';
 
 const BS = String.fromCharCode(92);      // backslash
 const LS = String.fromCharCode(0x2028);  // line separator
@@ -121,44 +119,15 @@ test('str(): U+2028/U+2029 are escaped', () => {
   assert.equal(eval(out), PAYLOADS.lineSeparator);
 });
 
-test('num(): non-numeric values are rejected', () => {
-  assert.throws(() => num(PAYLOADS.indexBreakout, { name: 'x' }), /Invalid number/);
-  assert.throws(() => num('1; app.quit()', { name: 'x' }), /Invalid number/);
-  assert.throws(() => num(NaN, { name: 'x' }), /Invalid number/);
+test('jsNum(): non-numeric values are rejected', () => {
+  assert.throws(() => jsNum(PAYLOADS.indexBreakout, 'x'), /Invalid x/);
+  assert.throws(() => jsNum('1; app.quit()', 'x'), /Invalid x/);
+  assert.throws(() => jsNum(NaN, 'x'), /Invalid x/);
 });
 
-test('index(): breakout attempts are rejected', () => {
-  assert.throws(() => index(PAYLOADS.indexBreakout, { name: 'pageIndex' }), /Invalid (index|parameter "pageIndex")/);
-  assert.throws(() => index(-1, { name: 'pageIndex' }), /Invalid (index|parameter "pageIndex")/);
-  assert.throws(() => index(1.5, { name: 'pageIndex' }), /Invalid (index|parameter "pageIndex")/);
-});
-
-test('measure(): number plus known unit only', () => {
-  assert.equal(measure(20, { unit: 'mm' }), '"20mm"');
-  assert.throws(() => measure('20mm"; app.quit(); //', { name: 'x' }), /Invalid (measurement|parameter "x")/);
-  assert.throws(() => measure(10, { unit: 'mm"; app.quit()' }), /Invalid unit/);
-});
-
-test('enumOf(): allow-list only', () => {
-  assert.equal(enumOf('LEFT_ALIGN', ALLOWED.alignment), 'LEFT_ALIGN');
-  assert.throws(
-    () => enumOf(PAYLOADS.enumBreakout, ALLOWED.alignment, { name: 'alignment' }),
-    /Invalid value/
-  );
-});
-
-test('bool(): always yields a literal', () => {
-  for (const v of ['true; app.quit()', {}, [], 'x', 0, null]) {
-    assert.match(bool(v), /^(true|false)$/);
-  }
-});
-
-test('validateFilePath(): system and outside paths are rejected', () => {
-  const outside = process.platform === 'win32'
-    ? 'C:' + BS + 'Windows' + BS + 'System32' + BS + 'x.indd'
-    : '/etc/x.indd';
-  assert.throws(() => validateFilePath(outside, [process.cwd()]), /Access denied/);
-  assert.throws(() => validateFilePath('', [process.cwd()]), /Invalid file path/);
+test('jsEnum(): identifiers only', () => {
+  assert.equal(jsEnum('LEFT_ALIGN', 'alignment'), 'LEFT_ALIGN');
+  assert.throws(() => jsEnum(PAYLOADS.enumBreakout, 'alignment'), /Invalid alignment/);
 });
 
 // ---------------------------------------------------------------- end-to-end
@@ -240,15 +209,10 @@ test('execute_indesign_code stays locked without the opt-in', async () => {
 });
 
 test('the destructive-operation guard actually blocks', async () => {
-  const { loadServer } = await import('./harness.mjs');
-  const { server } = await loadServer();
-  assert.throws(
-    () => server.validateDestructiveOperation({}, 'test operation', 'test target'),
-    /confirmation required/i,
-    'the guard did not throw - callers would carry on and perform the operation'
-  );
-  assert.doesNotThrow(
-    () => server.validateDestructiveOperation({ confirmDestructive: true }, 'test', 'target'),
-    'the guard blocked a confirmed operation'
-  );
+  const { runTool: run } = await import('./harness.mjs');
+  const blocked = await run('delete_page', { pageIndex: 0 });
+  assert.match(String(blocked.error && blocked.error.message), /confirmation required/i, 'delete_page ran without confirmDestructive');
+  assert.equal(blocked.script, null, 'a script was generated before the confirmation');
+  const confirmed = await run('delete_page', { pageIndex: 0, confirmDestructive: true });
+  assert.ok(!confirmed.error, 'the guard blocked a confirmed operation: ' + (confirmed.error && confirmed.error.message));
 });

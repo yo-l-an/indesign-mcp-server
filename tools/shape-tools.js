@@ -9,6 +9,7 @@ export function createShapeTools(server) {
     {
       name: 'place_image',
       modifies: true,
+      paths: ['imagePath'],
       description: 'Place an image into a new frame (mm). Give width and height for a fixed frame, only width or height to keep the aspect ratio, or neither to use the image size. Returns the frame id.',
       inputSchema: {
         type: 'object',
@@ -77,8 +78,8 @@ export function createShapeTools(server) {
         contentOffsetX, contentOffsetY, contentScale
       } = args;
 
-      // Security: Validate image path
-      const validatedPath = this.validateFilePath(imagePath);
+      // imagePath is already resolved and checked by the policy (lib/policy.js)
+      const validatedPath = imagePath;
       const fits = {
         FILL_PROPORTIONALLY: 'FitOptions.FILL_PROPORTIONALLY',
         PROPORTIONALLY: 'FitOptions.PROPORTIONALLY',

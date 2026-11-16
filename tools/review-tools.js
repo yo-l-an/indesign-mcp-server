@@ -506,6 +506,7 @@ export function createReviewTools(server) {
     {
       name: 'backup_document',
       modifies: false,
+      paths: ['backupDir'],
       description: `Extra backup outside prepare_edit (e.g. before a risky step): dated, named copy of the active document in "${BACKUP_FOLDER_NAME}" next to the .indd. The open document is not changed. Backups are never deleted by the server.`,
       inputSchema: {
         type: 'object',
@@ -519,12 +520,14 @@ export function createReviewTools(server) {
     {
       name: 'list_backups',
       modifies: false,
+      paths: ['backupDir'],
       description: `Backups of the active document (newest first) with date, reason and path, for restore_backup.`,
       inputSchema: { type: 'object', properties: { backupDir: { type: 'string', description: 'Optional: another backup folder' } } },
     },
     {
       name: 'restore_backup',
       modifies: false,
+      destructive: 'replaces the open document with a backup (the current state is backed up first)',
       description: 'Go back to a backup, only when the user asks: backs up the current state, closes the document WITHOUT saving, copies the backup over the .indd and reopens it. Needs confirmDestructive: true. The backup is kept.',
       inputSchema: {
         type: 'object',
@@ -710,7 +713,6 @@ export function createReviewTools(server) {
     if (!path.basename(backup).normalize('NFC').startsWith(`${base}__`)) {
       throw new Error(`${path.basename(backup)} is not a backup of the active document ${doc.name}. Activate the right document first.`);
     }
-    server.validateDestructiveOperation(args, 'Restore backup', `${doc.filePath} <- ${backup}`);
     const safety = await makeBackup(doc, 'avant restauration');
     await run(`var doc = __requireDoc(); doc.close(SaveOptions.NO); "closed";`);
     fs.copyFileSync(backup, doc.filePath);
