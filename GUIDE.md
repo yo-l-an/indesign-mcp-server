@@ -49,7 +49,8 @@ Corrections after the review ("finally 16 €"): change, then `review_compare()`
 ## Review for the PM
 
 `review_compare` returns:
-- per changed page, an image **BEFORE (left, red frames) | AFTER (right, green frames)**, cropped to the changed area ("DETAIL"), zones numbered;
+- per changed page, an image **BEFORE (left) | AFTER (right)** with dotted, numbered zones: **orange** = modified, **green** = added, **red** = removed. A text-only edit is framed on the changed lines, not the whole frame. Cropped to the changed area ("DETAIL") when the changes are local;
+- a gutter on the outer side of each page (left of BEFORE, right of AFTER) with one bar per zone, as tall as the zone: it shows at a glance where the changes are vertically, including small ones lost among graphics;
 - a Markdown table whose `#` matches the zones;
 - a temp folder with `report.html` (self-contained: images + detailed table) and the PNGs.
 

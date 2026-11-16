@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { createImage, decodePng, encodePng } from '../lib/png.js';
 import {
   pixelDiffRegions, diffInventories, textDiffCells, changeRows, changesTable, groupRows, labelsFor,
-  cropRectFor, cropImage, boundsToRect, fillRect, buildPageComposite,
+  cropRectFor, cropImage, boundsToRect, fillRect, buildPageComposite, drawGutter, ORANGE, GREEN,
 } from '../lib/review-diff.js';
 import { resolvePageRefs, backupFileName, slugify, pageSummary } from '../tools/review-tools.js';
 
@@ -115,6 +115,30 @@ test('bounds in mm map to pixels and off-page objects are dropped', () => {
   const r = boundsToRect([10, 10, 20, 110], 210, img);
   assert.ok(Math.abs(r.x - 28) <= 1 && Math.abs(r.w - 283) <= 2);
   assert.equal(boundsToRect([10, -100, 20, -50], 210, img), null);
+});
+
+test('composite: transparent gap, gutters on opposite sides, page on paper white', () => {
+  const page = { width: 200, height: 280, data: new Uint8Array(200 * 280 * 4) };   // fully transparent export
+  const zone = { rect: { x: 50, y: 100, w: 40, h: 20 }, zone: 1, kind: 'modified' };
+  const out = buildPageComposite({ before: page, after: page, beforeZones: [zone], afterZones: [zone], pageNumber: '5', L: labelsFor('fr') });
+  const px = (x, y) => Array.from(out.data.slice((y * out.width + x) * 4, (y * out.width + x) * 4 + 4));
+  const header = out.height - 280;
+  assert.equal(px(Math.floor(out.width / 2), header + 50)[3], 0, 'gap is transparent');
+  assert.deepEqual(px(20, header + 10), [255, 255, 255, 255], 'page falls back to paper white');
+  // before: gutter on the left edge, bar at the zone height; after: gutter on the right edge
+  assert.deepEqual(px(4, header + 110).slice(0, 3), ORANGE);
+  assert.deepEqual(px(4, header + 50), [255, 255, 255, 255]);
+  assert.deepEqual(px(out.width - 5, header + 110).slice(0, 3), ORANGE);
+});
+
+test('gutter puts overlapping zones in separate lanes', () => {
+  const img = createImage(20, 100, [0, 0, 0, 0]);
+  drawGutter(img, 0, 0, 20, 100, [
+    { rect: { x: 0, y: 10, w: 5, h: 60 }, kind: 'modified' },
+    { rect: { x: 0, y: 30, w: 5, h: 5 }, kind: 'added' },
+  ]);
+  const row = (y) => Array.from({ length: 20 }, (_, x) => img.data[(y * 20 + x) * 4 + 1]);
+  assert.ok(row(32).includes(ORANGE[1]) && row(32).includes(GREEN[1]), 'both bars visible side by side');
 });
 
 test('composite draws both panels, also for an added page', () => {

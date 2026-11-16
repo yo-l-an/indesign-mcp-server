@@ -24,6 +24,31 @@ const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const GUIDE_PATH = path.join(ROOT, 'GUIDE.md');
 export const BACKUP_FOLDER_NAME = 'InDesign Agent Backups';
 const REVIEW_ROOT_NAME = 'indesign-mcp-review';
+const TEXT_PROPS = new Set(['text', 'tableText']);
+
+// Part of g inside r (grown by pad, clipped to r), or null
+const clipRect = (g, r, pad = 0) => {
+  const x0 = Math.max(r.x, g.x - pad), y0 = Math.max(r.y, g.y - pad);
+  const x1 = Math.min(r.x + r.w, g.x + g.w + pad), y1 = Math.min(r.y + r.h, g.y + g.h + pad);
+  return x1 > x0 && y1 > y0 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : null;
+};
+
+// Merge regions closer than pad (fine regions -> one visual zone per area)
+const mergeNear = (rects, pad) => {
+  const out = rects.map((r) => ({ ...r }));
+  for (let i = 0; i < out.length; i++) {
+    for (let j = i + 1; j < out.length; j++) {
+      const a = out[i], b = out[j];
+      if (a.x - pad < b.x + b.w && b.x - pad < a.x + a.w && a.y - pad < b.y + b.h && b.y - pad < a.y + a.h) {
+        const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
+        out[i] = { x, y, w: Math.max(a.x + a.w, b.x + b.w) - x, h: Math.max(a.y + a.h, b.y + b.h) - y };
+        out.splice(j, 1);
+        j = i;
+      }
+    }
+  }
+  return out;
+};
 const REVIEW_MAX_AGE_MS = 3 * 24 * 3600 * 1000;
 const MAX_PAGES = 200;
 
@@ -329,6 +354,8 @@ export function createReviewTools(server) {
       var jobs = ${jsJson(jobs)};
       var prefs = app.pngExportPreferences;
       prefs.exportResolution = ${resolution};
+      // Opaque page: InDesign paints the page (paper) behind the content
+      try { prefs.transparentBackground = false; } catch (e) {}
       prefs.useDocumentBleeds = false;
       prefs.pngExportRange = ExportRangeOrAllPages.EXPORT_RANGE;
       prefs.exportingSpread = false;
@@ -424,7 +451,7 @@ export function createReviewTools(server) {
     },
     {
       name: 'review_compare',
-      description: 'AFTER the changes: compares the snapshot pages with the current state. Returns only the changed pages, as BEFORE | AFTER images with numbered dashed zones (orange modified, green added, red removed), cropped to the changed area, plus a Markdown change table (# | Page | Element | Property | Before | After | Change). Show both to the user. Can be called again after further corrections (always against the same BEFORE).',
+      description: 'AFTER the changes: compares the snapshot pages with the current state. Returns only the changed pages, as BEFORE | AFTER images with numbered dotted zones (orange modified, green added, red removed; text edits framed on the changed lines) and a side gutter minimap, cropped to the changed area, plus a Markdown change table (# | Page | Element | Property | Before | After | Change). Show both to the user. Can be called again after further corrections (always against the same BEFORE).',
       inputSchema: {
         type: 'object',
         properties: {
@@ -652,20 +679,32 @@ export function createReviewTools(server) {
       let imgB = pb ? decodePng(fs.readFileSync(path.join(beforeDir, `page-${pid}.png`))) : null;
       let imgA = pa ? decodePng(fs.readFileSync(path.join(afterDir, `page-${pid}.png`))) : null;
       let beforeZones = [], afterZones = [];
+      const sameSize = imgB && imgA && imgB.width === imgA.width && imgB.height === imgA.height;
+      const regions = imgB && imgA ? pixelDiffRegions(imgB, imgA, { cell: 4, gap: 1, ...sens }) : [];
+      const explained = [];
+      // A text-only change marks the changed lines (pixel areas inside the object), not the whole
+      // frame, so a one-word edit shows as a small zone and a short gutter bar
+      const zonesFor = (c, r) => {
+        explained.push(r);
+        const textOnly = c.kind === 'modified' && c.props.every((p) => TEXT_PROPS.has(p.prop));
+        if (!textOnly || !sameSize) return [r];
+        const near = Math.max(6, Math.round(imgA.width / 80));
+        const inside = mergeNear(regions.filter((g) => intersects(g, r)).map((g) => clipRect(g, r, 2)).filter(Boolean), near);
+        return inside.length ? inside : [r];
+      };
       for (const c of diff.changes) {
         if (c.kind !== 'added' && c.before.pageId === pid && imgB) {
           const r = boundsToRect(c.before.bounds, pb.widthMm, imgB);
-          if (r) beforeZones.push({ rect: r, zone: c.zone, kind: c.kind });
+          if (r) zonesFor(c, r).forEach((rect, i) => beforeZones.push({ rect, zone: c.zone, kind: c.kind, noLabel: i > 0 }));
         }
         if (c.kind !== 'removed' && c.after.pageId === pid && imgA) {
           const r = boundsToRect(c.after.bounds, pa.widthMm, imgA);
-          if (r) afterZones.push({ rect: r, zone: c.zone, kind: c.kind });
+          if (r) zonesFor(c, r).forEach((rect, i) => afterZones.push({ rect, zone: c.zone, kind: c.kind, noLabel: i > 0 }));
         }
       }
       if (imgB && imgA) {
-        const explained = [...beforeZones, ...afterZones].map((z) => z.rect);
         const pad = Math.round(imgA.width / 100);
-        for (const r of pixelDiffRegions(imgB, imgA, sens)) {
+        for (const r of mergeNear(regions, pad)) {
           if (explained.some((e) => intersects(r, e, pad))) continue;
           const zone = nextZone++;
           visualZones.push({ zone, pageNumber: pa.name, rect: r });
@@ -679,7 +718,7 @@ export function createReviewTools(server) {
       if (args.crop !== false && imgB && imgA && imgB.width === imgA.width && imgB.height === imgA.height) {
         const cr = cropRectFor([...beforeZones, ...afterZones].map((z) => z.rect), imgA.width, imgA.height);
         if (cr) {
-          const shift = (zones) => zones.map((z) => ({ zone: z.zone, kind: z.kind, rect: { ...z.rect, x: z.rect.x - cr.x, y: z.rect.y - cr.y } }));
+          const shift = (zones) => zones.map((z) => ({ zone: z.zone, kind: z.kind, noLabel: z.noLabel, rect: { ...z.rect, x: z.rect.x - cr.x, y: z.rect.y - cr.y } }));
           imgB = cropImage(imgB, cr); imgA = cropImage(imgA, cr);
           beforeZones = shift(beforeZones); afterZones = shift(afterZones);
           cropped = true;
@@ -737,7 +776,7 @@ function reportHtml({ title, summary, pages, rows, L }) {
 <html lang="${L === labelsFor('en') ? 'en' : 'fr'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)}</title>
 <style>
-:root { --bg:#f7f7f8; --fg:#1f2328; --muted:#6b7280; --line:#e5e7eb; --red:#dc2626; --green:#16a34a; --card:#fff; }
+:root { --bg:#f7f7f8; --fg:#1f2328; --muted:#6b7280; --line:#e5e7eb; --red:#dc2626; --green:#00c846; --card:#fff; }
 @media (prefers-color-scheme: dark) { :root { --bg:#16181d; --fg:#e6e6e6; --muted:#9ca3af; --line:#2d3139; --card:#1f2228; } }
 body { margin:0; padding:24px 16px; background:var(--bg); color:var(--fg); font:14px/1.5 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
 main { max-width:1400px; margin:0 auto; }
@@ -750,7 +789,7 @@ th { font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(-
 td.num { font-variant-numeric:tabular-nums; font-weight:600; text-align:right; }
 del { color:var(--red); } ins { color:var(--green); text-decoration:none; font-weight:600; }
 .k { font-size:12px; font-weight:600; padding:2px 8px; border-radius:999px; white-space:nowrap; border:1px solid var(--line); }
-.k-modified { color:#b45309; } .k-added { color:var(--green); } .k-removed { color:var(--red); } .k-visual { color:var(--muted); }
+.k-modified { color:#d98200; } .k-added { color:var(--green); } .k-removed { color:var(--red); } .k-visual { color:var(--muted); }
 </style></head><body><main>
 <h1>${esc(title)}</h1><p class="summary">${esc(summary)}</p>
 ${pages.map((p) => `<figure><img alt="${esc(L.page)} ${esc(p.name)}" src="data:image/png;base64,${p.png.toString('base64')}"><figcaption>${esc(L.page)} ${esc(p.name)} – ${p.zones} zone(s)</figcaption></figure>`).join('\n')}

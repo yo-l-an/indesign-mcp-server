@@ -200,6 +200,8 @@ export function createGraphicsTools(server) {
       var out = File(${jsStr(file)});
       var prefs = app.pngExportPreferences;
       prefs.exportResolution = ${dpi};
+      // Opaque page: InDesign paints the page (paper) behind the content
+      try { prefs.transparentBackground = false; } catch (e) {}
       prefs.useDocumentBleeds = ${bleed ? 'true' : 'false'};
       var label;
       ${has(args.objectId) ? `

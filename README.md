@@ -43,7 +43,7 @@ A comprehensive **Model Context Protocol (MCP) server** for **Adobe InDesign aut
 ### 🧭 **Project-manager workflow**
 - `GUIDE.md` is served to agents by `get_usage_guide` (the server's MCP instructions tell them to read it once per session)
 - `prepare_edit`: one call = backup copy + BEFORE snapshot of the pages the task touches + object ids
-- `review_compare`: only the changed pages, as BEFORE | AFTER images with numbered dashed zones (orange modified, green added, red removed), cropped to the changed area, plus a change table; a self-contained `report.html`
+- `review_compare`: only the changed pages, as BEFORE | AFTER images with numbered dotted zones (orange modified, green added, red removed; text edits framed on the changed lines) and a side gutter minimap, cropped to the changed area, plus a change table; a self-contained `report.html`
 - Dated, named backups in `InDesign Agent Backups/` next to the .indd, never deleted by the server; `list_backups` / `restore_backup`
 - `find_text` locates quoted text (page name, frame id, context) without reading whole stories
 
@@ -245,7 +245,7 @@ Locate text without reading whole stories: returns each match with page name, pa
 
 #### `review_compare`
 
-AFTER the changes: compares the snapshot pages with the current state. Returns only the changed pages, as BEFORE \| AFTER images with numbered dashed zones (orange modified, green added, red removed), cropped to the changed area, plus a Markdown change table (# \| Page \| Element \| Property \| Before \| After \| Change). Show both to the user. Can be called again after further corrections (always against the same BEFORE).
+AFTER the changes: compares the snapshot pages with the current state. Returns only the changed pages, as BEFORE \| AFTER images with numbered dotted zones (orange modified, green added, red removed; text edits framed on the changed lines) and a side gutter minimap, cropped to the changed area, plus a Markdown change table (# \| Page \| Element \| Property \| Before \| After \| Change). Show both to the user. Can be called again after further corrections (always against the same BEFORE).
 
 | Parameter | Type | Description |
 |---|---|---|
