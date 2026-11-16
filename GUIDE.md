@@ -72,7 +72,7 @@ Show the PM the image(s) and the change table, then report in three short parts:
 ### Review output
 
 - The images label themselves (BEFORE | AFTER, colour legend, zone numbers matching the table's `#`). A text-only edit is framed on the changed lines; the gutter beside each page marks where each zone sits vertically.
-- **Page map** (when pages were added, removed or moved): the page order BEFORE and AFTER side by side, aligned like a diff; added pages green, removed red, moved pages orange with an arrow from the old place to the new one; unchanged runs folded. Page names follow the numbering, so a moved page reads "10 → 4".
+- **Page map** (when pages were added, removed or moved): the document seen from above as spreads, BEFORE and AFTER side by side; identical spreads share a row and long runs are folded. Added pages green, removed red, moved pages orange with an arrow from the old place to the new one; grey links show pages that only shifted to another spread. Page names follow the numbering, so a moved page reads "10 → 4" in the table.
 - **Move image** (when objects changed page): source page BEFORE | destination page AFTER, an arrow from each object to where it landed. The destination page is found even outside the scope.
 - After a renumbering, a "Visuel" zone on a page's folio is the page number changing; the table says so.
 - Identical changes on many objects share one table row; `report.html` keeps one row per object and every image.

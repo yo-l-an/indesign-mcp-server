@@ -6,7 +6,7 @@ import { createImage, decodePng, encodePng } from '../lib/png.js';
 import {
   pixelDiffRegions, diffInventories, textDiffCells, changeRows, changesTable, groupRows, labelsFor,
   cropRectFor, cropImage, boundsToRect, fillRect, buildPageComposite, drawGutter, ORANGE, GREEN, RED,
-  pageStructureDiff, pageMapRows, buildPageMap, buildMoveComposite,
+  pageStructureDiff, spreadMapRows, groupSpreads, buildPageMap, buildMoveComposite,
 } from '../lib/review-diff.js';
 import { resolvePageRefs, backupFileName, slugify, pageSummary } from '../tools/review-tools.js';
 
@@ -194,15 +194,20 @@ test('a reordered page does not flag its objects; an object on another page is a
   assert.ok(rows.some((r) => r.kind === 'Déplacé' && r.property === 'Page'));
 });
 
-test('page map aligns rows like a diff and folds long unchanged runs', () => {
-  const pages = (ids) => ids.map((id) => ({ id, name: String(id), thumb: null }));
-  const b = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], a = [1, 2, 3, 4, 5, 6, 7, 9, 8, 10, 11];
-  const st = pageStructureDiff(b, a);
-  const rows = pageMapRows(pages(b), pages(a), st);
-  assert.ok(rows[0].fold >= 3, 'the unchanged start is folded');
-  assert.ok(rows.some((r) => r.right && r.right.id === 11 && r.kindR === 'added'));
-  const img = buildPageMap({ before: pages(b), after: pages(a), st, L: labelsFor('fr') });
-  assert.ok(img.width > 200 && img.height > 100);
+test('page map: pages grouped in spreads, identical spreads aligned and folded', () => {
+  // facing pages: 1 alone (right), then 2-3, 4-5, ... ; page 9 moved after page 3
+  const facing = (ids) => ids.map((id, k) => ({ id, name: String(k + 1), spread: k === 0 ? 's0' : `s${Math.ceil(k / 2)}`, side: k === 0 ? 'RIGHT_HAND' : k % 2 ? 'LEFT_HAND' : 'RIGHT_HAND', thumb: null }));
+  const b = facing([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]);
+  assert.deepEqual(groupSpreads(b).slice(0, 3).map((sp) => sp.key), ['1', '2,3', '4,5']);
+  const a = facing([1, 2, 3, 9, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15, 16, 17]);
+  const rows = spreadMapRows(b, a);
+  assert.ok(rows[0].same && rows[1].same, 'first spreads unchanged');
+  assert.ok(rows.some((r) => r.fold), 'unchanged spreads at the end are folded');
+  const st = pageStructureDiff(b.map((p) => p.id), a.map((p) => p.id));
+  assert.deepEqual(st.moved, [9]);
+  const img = buildPageMap({ before: b, after: a, st, L: labelsFor('fr') });
+  assert.ok(img.width > 300 && img.height > 200);
+  assert.equal(img.data[3], 255, 'opaque white background');
 });
 
 test('move image draws an arrow between the two pages', () => {

@@ -177,7 +177,10 @@ function inventoryScript(pageIds, knownIds = null) {
     for (var p = 0; p < doc.pages.length; p++) {
       var pg = doc.pages[p];
       allIds.push(pg.id);
-      allPg.push({ id: pg.id, name: pg.name });
+      var spr = null, side = "";
+      try { spr = pg.parent.id; } catch (e) {}
+      try { side = String(pg.side); } catch (e) {}
+      allPg.push({ id: pg.id, name: pg.name, spread: spr, side: side });
       if (want && !want[pg.id] && !(known && !known[pg.id])) continue;
       var pb = pg.bounds;
       var items = [], all = pg.allPageItems;
@@ -607,7 +610,7 @@ export function createReviewTools(server) {
     } catch { /* no window (e.g. document opened without one): not needed */ }
     lines.push(`Snapshot: snapshotId=${id} – ${inv.pages.length ? pageRange(inv.pages) : 'page order only'}`);
     if (args.listObjects !== false && inv.pages.length && inv.pages.length <= 6) lines.push('', ...inv.pages.map((p) => pageSummary(p)));
-    else if (args.listObjects !== false) lines.push(`(${inv.pages.length} pages: object lists omitted; use list_page_items or find_text for the page you work on)`);
+    else if (args.listObjects !== false && inv.pages.length) lines.push(`(${inv.pages.length} pages: object lists omitted; use list_page_items or find_text for the page you work on)`);
     lines.push('', 'Next: make the changes (use the ids), then review_compare.');
     return { content: [{ type: 'text', text: lines.join('\n') }] };
   };
@@ -878,10 +881,10 @@ export function createReviewTools(server) {
       const curPages = after.document.allPages.map((p, i) => ({ ...p, index: i }));
       await renderPages(curPages, 36, thumbDir);
       const thumb = (img) => (img ? scaleImage(img, Math.max(8, Math.round((img.width * MAP_THUMB_H) / img.height)), MAP_THUMB_H) : null);
-      const afterList = curPages.map((p) => ({ id: p.id, name: p.name, thumb: thumb(pageImage(thumbDir, p.id)) }));
+      const afterList = curPages.map((p) => ({ id: p.id, name: p.name, spread: p.spread, side: p.side, thumb: thumb(pageImage(thumbDir, p.id)) }));
       const byId = new Map(afterList.map((p) => [p.id, p.thumb]));
       const beforeList = (before.document.allPages || before.document.allPageIds.map((pid) => ({ id: pid, name: '?' })))
-        .map((p) => ({ id: p.id, name: p.name, thumb: byId.get(p.id) || thumb(pageImage(beforeDir, p.id)) }));
+        .map((p) => ({ id: p.id, name: p.name, spread: p.spread, side: p.side, thumb: byId.get(p.id) || thumb(pageImage(beforeDir, p.id)) }));
       const st = pageStructureDiff(before.document.allPageIds, after.document.allPageIds);
       const png = encodePng(buildPageMap({ before: beforeList, after: afterList, st, L }));
       const file = path.join(afterDir, 'review-pages.png');
