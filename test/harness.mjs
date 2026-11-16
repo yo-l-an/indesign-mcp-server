@@ -1,11 +1,8 @@
 /**
  * Test harness.
  *
- * Loads index.js and replaces executeInDesignScript with a collector, so the
- * generated ExtendScript can be inspected without InDesign running.
- *
- * index.js itself is not modified — the harness writes a copy into a temp
- * directory and removes the auto-start at the end of the file.
+ * Loads index.js with an in-memory executor (lib/executor.js) that collects the
+ * generated ExtendScript, so it can be inspected without InDesign running.
  */
 
 import fs from 'fs';
@@ -26,14 +23,15 @@ export async function loadServer() {
   // index.js exports the class and only starts the server when run directly,
   // so it can be imported as-is.
   const mod = await import(pathToFileURL(path.join(ROOT, 'index.js')).href);
-  const server = new mod.InDesignMCPServer();
+  const { createExecutor, memoryAdapter } = await import(pathToFileURL(path.join(ROOT, 'lib/executor.js')).href);
 
-  // Collect scripts instead of sending them to InDesign.
+  // Collect scripts instead of sending them to InDesign: in-memory executor adapter.
   const captured = [];
-  server.executeInDesignScript = async (script) => {
-    captured.push(script);
-    return '(mock)';
-  };
+  const executor = createExecutor({
+    adapter: memoryAdapter((script) => { captured.push(script); return '(mock)'; }),
+    tempDir: fs.mkdtempSync(path.join(os.tmpdir(), 'indesign-mcp-harness-')),
+  });
+  const server = new mod.InDesignMCPServer({ executor });
 
   cached = { server, captured };
   return cached;

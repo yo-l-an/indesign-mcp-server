@@ -19,10 +19,9 @@ process.env.INDESIGN_ALLOW_ARBITRARY_CODE = '1';
 const { InDesignMCPServer } = await import('../index.js');
 const { buildWrapper } = await import('../lib/script-runtime.js');
 
-const server = new InDesignMCPServer();
+const { createExecutor, memoryAdapter } = await import('../lib/executor.js');
 let captured = [];
-server.executeInDesignScript = async (script) => { captured.push(script); return 'ok'; };
-server.launchJsx = async () => 'ok';
+const server = new InDesignMCPServer({ executor: createExecutor({ adapter: memoryAdapter((script) => { captured.push(script); return 'ok'; }), tempDir: path.join(TMP, 'scripts') }) });
 
 const callHandler = server.server._requestHandlers.get('tools/call');
 const listHandler = server.server._requestHandlers.get('tools/list');

@@ -8,13 +8,12 @@ import {
   ListToolsRequestSchema,
   McpError,
 } from '@modelcontextprotocol/sdk/types.js';
-import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { fileURLToPath } from 'url';
-import { jsStr, jsJson, jsNum, jsEnum, appleScriptStr, describeOsascriptError, buildWrapper } from './lib/script-runtime.js';
-import * as windowsLauncher from './lib/launcher-windows.js';
+import { jsStr, jsJson, jsNum, jsEnum } from './lib/script-runtime.js';
+import { createExecutor } from './lib/executor.js';
 import { createExtraTools } from './tools/extra-tools.js';
 import { createVectorTools } from './tools/vector-tools.js';
 import { createGraphicsTools } from './tools/graphics-tools.js';
@@ -31,7 +30,8 @@ const PACKAGE_VERSION = (() => {
 })();
 
 export class InDesignMCPServer {
-  constructor() {
+  constructor({ executor } = {}) {
+    this.executor = executor || createExecutor();
     this.server = new Server(
       {
         name: 'indesign-server-complete',
@@ -1136,193 +1136,12 @@ CAUTION: Only do this if you understand the risks and have verified the operatio
       }
   }
 
-  // =================== CORE UTILITIES ===================
-  // Directory for generated scripts. Scripts are deleted after a successful run and
-  // kept after a failure so they can be inspected (see README, "Debugging").
-  get scriptDir() {
-    if (!this._scriptDir) {
-      this._scriptDir = path.join(os.tmpdir(), 'indesign-mcp');
-      fs.mkdirSync(this._scriptDir, { recursive: true });
-    }
-    return this._scriptDir;
-  }
-
-  // Installed InDesign application name (e.g. "Adobe InDesign 2026"), resolved once:
-  //   1. INDESIGN_APP_NAME env override
-  //   2. an InDesign instance that is already running
-  //   3. the newest "Adobe InDesign <year>.app" installed on disk
-  //   4. a sensible default
-  // On Windows the name follows the COM ProgID (see comProgId).
-  get appName() {
-    if (!this._appName) this._appName = this.resolveAppName();
-    return this._appName;
-  }
-
-  // Windows: COM ProgID of the InDesign version to script (see lib/launcher-windows.js)
-  get comProgId() {
-    if (!this._comProgId) this._comProgId = windowsLauncher.resolveProgId();
-    return this._comProgId;
-  }
-
-  resolveAppName() {
-    if (process.env.INDESIGN_APP_NAME) return process.env.INDESIGN_APP_NAME;
-    if (IS_WINDOWS) return windowsLauncher.appNameForProgId(this.comProgId);
-
-    try {
-      const running = execSync(
-        `osascript -e 'tell application "System Events" to get name of (processes whose name starts with "Adobe InDesign")'`,
-        { encoding: 'utf8', timeout: 10000, stdio: ['ignore', 'pipe', 'ignore'] }
-      ).trim();
-      if (running) return running.split(',')[0].trim();
-    } catch {
-      // System Events unavailable or nothing running: fall through
-    }
-
-    const candidates = [];
-    for (const base of ['/Applications', path.join(os.homedir(), 'Applications')]) {
-      let entries;
-      try {
-        entries = fs.readdirSync(base);
-      } catch {
-        continue;
-      }
-      for (const entry of entries) {
-        if (!/^Adobe InDesign/.test(entry)) continue;
-        if (/\.app$/.test(entry)) {
-          candidates.push(entry.replace(/\.app$/, ''));
-          continue;
-        }
-        // Adobe usually nests the .app inside a versioned folder
-        try {
-          for (const inner of fs.readdirSync(path.join(base, entry))) {
-            if (/^Adobe InDesign.*\.app$/.test(inner)) candidates.push(inner.replace(/\.app$/, ''));
-          }
-        } catch {
-          // not a directory or unreadable
-        }
-      }
-    }
-    if (candidates.length) {
-      const ver = (n) => parseInt((n.match(/\d+/) || [0])[0], 10) || 0;
-      candidates.sort((a, b) => ver(b) - ver(a));
-      return candidates[0];
-    }
-
-    return 'Adobe InDesign 2026';
-  }
-
-  // Remove kept debug scripts older than three days
-  _pruneScriptDir() {
-    if (this._pruned) return;
-    this._pruned = true;
-    const cutoff = Date.now() - 3 * 24 * 3600 * 1000;
-    try {
-      for (const f of fs.readdirSync(this.scriptDir)) {
-        const fp = path.join(this.scriptDir, f);
-        const st = fs.statSync(fp);
-        if (st.isFile() && st.mtimeMs < cutoff) fs.unlinkSync(fp);
-      }
-    } catch (e) { /* best effort */ }
-  }
-
-  // Run AppleScript source from a temp file (never via the command line)
-  async executeAppleScript(script) {
-    const file = path.join(this.scriptDir, `applescript_${Date.now()}_${Math.random().toString(36).slice(2)}.scpt`);
-    fs.writeFileSync(file, script, 'utf8');
-    try {
-      const result = execSync(`osascript ${JSON.stringify(file)}`, {
-        encoding: 'utf8',
-        timeout: 60000,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-      fs.unlinkSync(file);
-      return result.trim();
-    } catch (error) {
-      const err = new Error(describeOsascriptError(error));
-      err.debugFile = file;
-      throw err;
-    }
-  }
-
-  // Start a generated .jsx in InDesign: AppleScript `do script` on macOS, COM DoScript on Windows.
-  // The launcher only contains the application and the script path, never user data.
-  async launchJsx(jsxFile) {
-    if (!IS_WINDOWS) {
-      return this.executeAppleScript(
-        `tell application ${appleScriptStr(this.appName)}\n` +
-        `  do script (POSIX file ${appleScriptStr(jsxFile)}) language javascript\n` +
-        `end tell`
-      );
-    }
-    const launcher = jsxFile.replace(/\.jsx$/, '.launcher.js');
-    fs.writeFileSync(launcher, windowsLauncher.launcherSource(this.comProgId, jsxFile), 'ascii');
-    // COM starts InDesign when it is not running; a cold start can take minutes, and InDesign
-    // stays slow for a while after it (fonts, plug-ins), so later calls get the long timeout too
-    if (!this._inDesignSeen && !windowsLauncher.isInDesignRunning()) this._coldStartAt = Date.now();
-    const warmingUp = this._coldStartAt && Date.now() - this._coldStartAt < 180000;
-    try {
-      const out = windowsLauncher.runLauncher(launcher, warmingUp ? 300000 : 60000);
-      this._inDesignSeen = true;
-      return out;
-    } finally {
-      fs.rmSync(launcher, { force: true });
-    }
-  }
-
-  // Run ExtendScript in InDesign and return the script's last expression as a string.
-  // Calls are serialised: InDesign handles one script at a time.
-  executeInDesignScript(script) {
-    const run = () => this._runInDesignScript(script);
-    const next = (this._queue || Promise.resolve()).then(run, run);
-    this._queue = next.catch(() => {});
-    return next;
-  }
-
-  async _runInDesignScript(script) {
-    const id = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
-    const jsxFile = path.join(this.scriptDir, `script_${id}.jsx`);
-    const resultFile = path.join(this.scriptDir, `result_${id}.txt`);
-
-    fs.writeFileSync(jsxFile, buildWrapper(script, resultFile.replace(/\\/g, '/')), 'utf8');
-
-    let failure = null;
-    try {
-      await this.launchJsx(jsxFile);
-
-      if (!fs.existsSync(resultFile)) {
-        return '(no return value)';
-      }
-      const result = fs.readFileSync(resultFile, 'utf8');
-      // Tool scripts report failures as plain strings; surface them as real errors
-      // instead of letting formatResponse() present them as a success.
-      if (/^(ERROR:|Error\b|No document open|No (text frame|objects?)\b|Cannot\b|Invalid\b|Document has never)/.test(result) ||
-          /^[^\n]{0,200}\bnot found\b[^\n]*$/.test(result)) {
-        failure = new Error(result.replace(/^ERROR:\s*/, ''));
-        // "Code: n/a" = a validation error raised by our own script (bad id, missing style...),
-        // not an InDesign failure: no need to keep the script.
-        failure.expected = /^ERROR:/.test(result) ? /\(Code: (n\/a|1),/.test(result) : true;
-        throw failure;
-      }
-      return result;
-    } catch (error) {
-      failure = error;
-      if (!error.expected) {
-        // Keep the script for debugging; point at it without dumping osascript output
-        console.error(`[indesign-mcp] script failed, kept for debugging: ${jsxFile}`);
-        error.message = `${error.message} [debug script: ${jsxFile}]`;
-      }
-      throw error;
-    } finally {
-      if (!failure || failure.expected) {
-        for (const f of [jsxFile, resultFile]) {
-          if (fs.existsSync(f)) fs.unlinkSync(f);
-        }
-      } else if (fs.existsSync(resultFile)) {
-        fs.unlinkSync(resultFile);
-      }
-      this._pruneScriptDir();
-    }
-  }
+  // =================== SCRIPT EXECUTION (lib/executor.js) ===================
+  // Run ExtendScript in InDesign; returns the script's last expression as a string and throws
+  // when the script throws. Tests inject an executor with an in-memory adapter.
+  executeInDesignScript(script) { return this.executor.run(script); }
+  get scriptDir() { return this.executor.tempDir; }
+  get appName() { return this.executor.appName; }
 
   // Embed a value in generated ExtendScript as a safe string literal
   jsStr(value) { return jsStr(value); }
@@ -1573,13 +1392,13 @@ CAUTION: Only do this if you understand the risks and have verified the operatio
       try {
         var file = File(${this.jsStr(validatedPath)});
         if (!file.exists) {
-          "File not found: ${validatedPath}";
+          throw new Error("File not found: " + ${this.jsStr(validatedPath)});
         } else {
           var doc = app.open(file);
           "Document opened: " + doc.name + " (" + doc.pages.length + " pages)";
         }
       } catch (e) {
-        "Error opening document: " + e.message;
+        throw new Error("Error opening document: " + e.message);
       }
     `;
 
@@ -1636,11 +1455,11 @@ CAUTION: Only do this if you understand the risks and have verified the operatio
 
     const script = `
       if (app.documents.length === 0) {
-        "No document open to close";
+        throw new Error("No document open to close");
       } else {
         var doc = ${name ? `app.documents.itemByName(${this.jsStr(name)})` : 'app.activeDocument'};
         if (!doc.isValid) {
-          "Document not found: " + ${this.jsStr(name || '')};
+          throw new Error("Document not found: " + ${this.jsStr(name || '')});
         } else {
           var docName = doc.name;
           if (${save ? 'true' : 'false'}) {
@@ -1667,7 +1486,7 @@ CAUTION: Only do this if you understand the risks and have verified the operatio
     
     const script = `
       if (app.documents.length === 0) {
-        "No document open";
+        throw new Error("No document open");
       } else {
         var doc = app.activeDocument;
         try {
@@ -1689,7 +1508,7 @@ CAUTION: Only do this if you understand the risks and have verified the operatio
           
           "Page added at position " + (newPage.documentOffset + 1) + ". Total pages: " + doc.pages.length;
         } catch (e) {
-          "Error adding page: " + e.message;
+          throw new Error("Error adding page: " + e.message);
         }
       }
     `;
@@ -1706,21 +1525,21 @@ CAUTION: Only do this if you understand the risks and have verified the operatio
     
     const script = `
       if (app.documents.length === 0) {
-        "No document open";
+        throw new Error("No document open");
       } else {
         var doc = app.activeDocument;
         try {
           if (${pageIndex} >= doc.pages.length || ${pageIndex} < 0) {
-            "Invalid page index: ${pageIndex}. Document has " + doc.pages.length + " pages.";
+            throw new Error("Invalid page index: ${pageIndex}. Document has " + doc.pages.length + " pages.");
           } else if (doc.pages.length === 1) {
-            "Cannot delete the last page in the document.";
+            throw new Error("Cannot delete the last page in the document.");
           } else {
             var pageToDelete = doc.pages[${pageIndex}];
             pageToDelete.remove();
             "Page " + (${pageIndex} + 1) + " deleted. Remaining pages: " + doc.pages.length;
           }
         } catch (e) {
-          "Error deleting page: " + e.message;
+          throw new Error("Error deleting page: " + e.message);
         }
       }
     `;
@@ -1752,18 +1571,18 @@ CAUTION: Only do this if you understand the risks and have verified the operatio
     
     const script = `
       if (app.documents.length === 0) {
-        "No document open";
+        throw new Error("No document open");
       } else {
         var doc = app.activeDocument;
         try {
           if (${pageIndex} >= doc.pages.length || ${pageIndex} < 0) {
-            "Invalid page index: ${pageIndex}. Document has " + doc.pages.length + " pages.";
+            throw new Error("Invalid page index: ${pageIndex}. Document has " + doc.pages.length + " pages.");
           } else {
             app.activeWindow.activePage = doc.pages[${pageIndex}];
             "Navigated to page " + (${pageIndex} + 1);
           }
         } catch (e) {
-          "Error navigating to page: " + e.message;
+          throw new Error("Error navigating to page: " + e.message);
         }
       }
     `;
@@ -1777,13 +1596,13 @@ CAUTION: Only do this if you understand the risks and have verified the operatio
   async getSelectedObjects() {
     const script = `
       if (app.documents.length === 0) {
-        "No document open";
+        throw new Error("No document open");
       } else {
         var doc = app.activeDocument;
         var selection = app.selection;
         
         if (selection.length === 0) {
-          "No objects selected. Please select a text frame or other object first.";
+          throw new Error("No objects selected. Please select a text frame or other object first.");
         } else {
           var result = "=== SELECTED OBJECTS ===\\n";
           
@@ -1916,7 +1735,7 @@ CAUTION: Only do this if you understand the risks and have verified the operatio
 
     const script = `
       if (app.documents.length === 0) {
-        "No document open";
+        throw new Error("No document open");
       } else {
         var doc = app.activeDocument;
         var frame = null;
@@ -2367,7 +2186,7 @@ CAUTION: Only do this if you understand the risks and have verified the operatio
 
     const script = `
       if (app.documents.length === 0) {
-        "No document open";
+        throw new Error("No document open");
       } else {
         var doc = app.activeDocument;
         try {
@@ -2476,7 +2295,7 @@ CAUTION: Only do this if you understand the risks and have verified the operatio
             issues;
           }
         } catch (e) {
-          "Error analyzing typography: " + e.message;
+          throw new Error("Error analyzing typography: " + e.message);
         }
       }
     `;
@@ -2488,7 +2307,7 @@ CAUTION: Only do this if you understand the risks and have verified the operatio
   async listGrepSearches() {
     const script = `
       if (app.documents.length === 0) {
-        "No document open";
+        throw new Error("No document open");
       } else {
         var doc = app.activeDocument;
         try {
@@ -2523,7 +2342,7 @@ CAUTION: Only do this if you understand the risks and have verified the operatio
           
           result;
         } catch (e) {
-          "Error listing GREP searches: " + e.message;
+          throw new Error("Error listing GREP searches: " + e.message);
         }
       }
     `;
@@ -2589,7 +2408,7 @@ CAUTION: Only do this if you understand the risks and have verified the operatio
 
     const script = `
       if (app.documents.length === 0) {
-        "No document open";
+        throw new Error("No document open");
       } else {
         var doc = app.activeDocument;
         try {
@@ -2688,7 +2507,7 @@ CAUTION: Only do this if you understand the risks and have verified the operatio
             issues;
           }
         } catch (e) {
-          "Error analyzing text: " + e.message;
+          throw new Error("Error analyzing text: " + e.message);
         }
       }
     `;
@@ -3247,7 +3066,7 @@ CAUTION: Only do this if you understand the risks and have verified the operatio
 
     const script = `
       if (app.documents.length === 0) {
-        "No document open";
+        throw new Error("No document open");
       } else {
         var doc = app.activeDocument;
         var result = "=== DOCUMENT STYLES ===\\n\\n";
@@ -3623,7 +3442,7 @@ Usage: INDESIGN_ALLOW_ARBITRARY_CODE=1 node index.js`
   async viewDocument() {
     const script = `
       if (app.documents.length === 0) {
-        "No document open";
+        throw new Error("No document open");
       } else {
         var doc = app.activeDocument;
         var info = "=== DOCUMENT VIEW ===\\n";
@@ -3779,7 +3598,7 @@ Usage: INDESIGN_ALLOW_ARBITRARY_CODE=1 node index.js`
   async listLayers() {
     const script = `
       if (app.documents.length === 0) {
-        "No document open";
+        throw new Error("No document open");
       } else {
         var doc = app.activeDocument;
         var result = "=== DOCUMENT LAYERS ===\\n\\n";
@@ -3808,7 +3627,7 @@ Usage: INDESIGN_ALLOW_ARBITRARY_CODE=1 node index.js`
 
     const script = `
       if (app.documents.length === 0) {
-        "No document open";
+        throw new Error("No document open");
       } else {
         var doc = app.activeDocument;
         try {
@@ -3829,7 +3648,7 @@ Usage: INDESIGN_ALLOW_ARBITRARY_CODE=1 node index.js`
           proc.remove();
           "Preflight with profile " + preflightProfile.name + ": " + (summary === "None" ? "no issues found" : "issues found:\\n" + summary);
         } catch (e) {
-          "Error running preflight: " + e.message;
+          throw new Error("Error running preflight: " + e.message);
         }
       }
     `;
