@@ -228,7 +228,7 @@ ONE CALL BEFORE CHANGING A DOCUMENT. For the pages the task touches: (1) backup 
 | `reason` *(required)* | string | What the task is, for the backup name, e.g. "correction prix p12" |
 | `backup` | boolean | false = no backup (only if the user declined it or one was made for this task already) Default: `true`. |
 | `listObjects` | boolean | Return the object list of the pages (off when you already know the ids) Default: `true`. |
-| `resolution` | number | Snapshot resolution in dpi (36-150) Default: `72`. |
+| `resolution` | number | Snapshot resolution in dpi (36-150) Default: `96`. |
 
 #### `find_text`
 

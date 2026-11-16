@@ -25,6 +25,7 @@ export const GUIDE_PATH = path.join(ROOT, 'GUIDE.md');
 export const BACKUP_FOLDER_NAME = 'InDesign Agent Backups';
 const REVIEW_ROOT_NAME = 'indesign-mcp-review';
 const TEXT_PROPS = new Set(['text', 'tableText']);
+const MAP_THUMB_H = 100;   // page map thumbnail height (px)
 
 // Part of g inside r (grown by pad, clipped to r), or null
 const clipRect = (g, r, pad = 0) => {
@@ -446,7 +447,7 @@ export function createReviewTools(server) {
           reason: { type: 'string', description: 'What the task is, for the backup name, e.g. "correction prix p12"' },
           backup: { type: 'boolean', description: 'false = no backup (only if the user declined it or one was made for this task already)', default: true },
           listObjects: { type: 'boolean', description: 'Return the object list of the pages (off when you already know the ids)', default: true },
-          resolution: { type: 'number', description: 'Snapshot resolution in dpi (36-150)', default: 72 },
+          resolution: { type: 'number', description: 'Snapshot resolution in dpi (36-150)', default: 96 },
         },
         required: ['reason'],
       },
@@ -580,7 +581,7 @@ export function createReviewTools(server) {
 
   handlers.prepare_edit = async (args) => {
     pruneReviews();
-    const resolution = has(args.resolution) ? jsNum(args.resolution, 'resolution') : 72;
+    const resolution = has(args.resolution) ? jsNum(args.resolution, 'resolution') : 96;
     if (resolution < 36 || resolution > 150) throw new Error('resolution must be 36-150 dpi');
     const pageIds = await targetPageIds(args, { required: true });
     const doc = await activeDoc();
@@ -875,8 +876,8 @@ export function createReviewTools(server) {
       const thumbDir = path.join(afterDir, 'thumbs');
       fs.mkdirSync(thumbDir, { recursive: true });
       const curPages = after.document.allPages.map((p, i) => ({ ...p, index: i }));
-      await renderPages(curPages, 24, thumbDir);
-      const thumb = (img) => (img ? scaleImage(img, Math.max(8, Math.round((img.width * 64) / img.height)), 64) : null);
+      await renderPages(curPages, 36, thumbDir);
+      const thumb = (img) => (img ? scaleImage(img, Math.max(8, Math.round((img.width * MAP_THUMB_H) / img.height)), MAP_THUMB_H) : null);
       const afterList = curPages.map((p) => ({ id: p.id, name: p.name, thumb: thumb(pageImage(thumbDir, p.id)) }));
       const byId = new Map(afterList.map((p) => [p.id, p.thumb]));
       const beforeList = (before.document.allPages || before.document.allPageIds.map((pid) => ({ id: pid, name: '?' })))
