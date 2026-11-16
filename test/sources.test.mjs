@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readDocx } from '../lib/docx.js';
 import { readZip } from '../lib/xml-lite.js';
 import { openPdf, readAnnotations, readPdfText, pdfDate } from '../lib/pdf-source.js';
-import { grepNeedle, pdfNeedles, pdfFeedbackTable, docxFeedbackTables, pdfTarget } from '../tools/source-tools.js';
+import { grepNeedle, pdfNeedles, pdfTarget, readFeedback, feedbackTable, locateFeedback, pagesFrom } from '../lib/feedback.js';
 
 // ---- tiny ZIP writer (stored entries) -------------------------------------------------------------
 const CRC = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
@@ -87,9 +87,16 @@ test('docx: comments keep their anchor, section and replies', () => {
   assert.equal(c.anchor, 'Prix : 12 € & taxes');
   assert.equal(c.section, 'Fiche transport › Constat');
   assert.equal(r.parent, c.id);
-  const table = docxFeedbackTables(d, null);
-  assert.match(table, /\| C1 \| Fiche transport › Constat \| «Prix : 12 € & taxes» \| Mettre 15 € \/ ↳ David : OK pour moi \| Chloé \|/);
-  assert.match(table, /\| M1 \| .* \| Le ~~stock~~ de Nantes .* \| Le \*\*magasin central\*\* de Nantes .* \| Alice \|/);
+});
+
+test('docx feedback: comments and tracked changes in the same table', async () => {
+  const fb = await readFeedback({ kind: 'docx', docx: readDocx(sampleDocx()) });
+  assert.deepEqual(fb.items.map((it) => it.key), ['C1', 'M1']);
+  const table = feedbackTable(fb, null);
+  assert.match(table, /^\| # \| Section \| Type \| Texte visé \| Retour \| Auteur \|/);
+  assert.match(table, /\| C1 \| Fiche transport › Constat \| Commentaire \| «Prix : 12 € & taxes» \| Mettre 15 € \/ ↳ David : OK pour moi \| Chloé \|/);
+  assert.match(table, /\| M1 \| .* \| Suivi \| Le ~~stock~~ de Nantes .* \| → Le \*\*magasin central\*\* de Nantes .* \| Alice \|/);
+  assert.deepEqual((await readFeedback({ kind: 'docx', docx: readDocx(sampleDocx()) }, { author: 'alice' })).items.map((it) => it.key), ['M1']);
 });
 
 // ---- minimal PDF with review annotations ----------------------------------------------------------
@@ -140,7 +147,8 @@ test('pdf: annotations point at their text, replies are threaded, links skipped'
 
 test('pdf: feedback table and InDesign needles', async () => {
   const items = await readAnnotations(await openPdf(samplePdf()));
-  const table = pdfFeedbackTable(items, new Map([[1, 'p.4 #120']]));
+  const fb = await readFeedback({ kind: 'pdf', pdf: await openPdf(samplePdf()) });
+  const table = feedbackTable(fb, new Map([['1', 'p.4 #120']]));
   assert.match(table, /\| 1 \| 4 \| Supprimer \| «12» dans «Le prix est de «12» euros[^|]*» \| supprimer \| Alice \| p\.4 #120 \|/);
   assert.match(table, /Insérer .* insérer «TTC»/);
   assert.match(table, /Note \| près de «Le prix est de 12 euros» \| Vérifier le prix \/ ↳ Bob : OK \| Chloé/);
@@ -165,4 +173,46 @@ test('grep needles: escaped, flexible spaces, bullets dropped', () => {
   assert.equal(grepNeedle('• Source A. • Source B, Travaux sur'), 'Source\\s+B,\\s+Travaux\\s+sur');
   assert.equal(grepNeedle('à'), null);
   assert.equal(pdfDate("D:20260623163231+02'00'"), '2026-06-23 16:32');
+});
+
+test('locate: reviewer text first, corrected text second, case-only corrections case-sensitive', async () => {
+  const items = [
+    { key: '1', needles: { before: 'prix\\s+12', after: 'prix\\s+15' } },
+    { key: '2', needles: { before: 'ancien\\s+titre', after: 'nouveau\\s+titre' } },
+    { key: '3', needles: { before: 'Mot\\s+clé', after: 'mot\\s+clé' } },
+    { key: '4', needles: { before: 'rien' } },
+    { key: '5', needles: { before: null } },
+  ];
+  const calls = [];
+  const doc = new Map([['prix\\s+12', 'p.4 #120'], ['nouveau\\s+titre', 'p.6 #300']]);
+  const search = async (list) => { calls.push(list); return new Map(list.filter((n) => doc.has(n.grep)).map((n) => [n.key, doc.get(n.grep)])); };
+  const loc = await locateFeedback(items, search);
+  assert.deepEqual([...loc], [['1', 'p.4 #120'], ['2', 'déjà fait ? p.6 #300'], ['3', 'introuvable'], ['4', 'introuvable']]);
+  assert.deepEqual(calls[0].map((n) => [n.key, n.cs]), [['1', false], ['2', false], ['3', true], ['4', false]]);
+  assert.deepEqual(calls[1].map((n) => n.key), ['2', '3'], 'second pass only for corrections not found');
+  assert.deepEqual(pagesFrom(loc), ['4', '6']);
+});
+
+test('read_feedback: one table, located in the document through the executor', async () => {
+  const fs = await import('fs');
+  const os = await import('os');
+  const path = await import('path');
+  const { createToolContext } = await import('../lib/tool-context.js');
+  const { createExecutor, memoryAdapter } = await import('../lib/executor.js');
+  const { createPolicy } = await import('../lib/policy.js');
+  const { createRegistry } = await import('../lib/registry.js');
+  const { createSourceTools } = await import('../tools/source-tools.js');
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'indesign-mcp-feedback-')));
+  const file = path.join(dir, 'retours.pdf');
+  fs.writeFileSync(file, samplePdf());
+  // the GREP script finds the struck-out text of item 1 only
+  const executor = createExecutor({ tempDir: path.join(dir, 'scripts'), adapter: memoryAdapter((s) => (/LOCATE/.test(s) ? 'LOCATE\n1\tp.4 #120' : 'ok')) });
+  const policy = createPolicy({ allowedDirs: [dir] });
+  const registry = createRegistry([createSourceTools(createToolContext({ executor, policy, workflow: {} }))], { policy });
+  const out = (await registry.call('read_feedback', { path: file, locate: true })).content[0].text;
+  assert.match(out, /^retours\.pdf – 3 retours \(/);
+  assert.match(out, /Dans InDesign : pages 4\./);
+  assert.match(out, /\| # \| Page \| Type \| Texte visé \| Retour \| Auteur \| Dans InDesign \|/);
+  assert.match(out, /\| 1 \| 4 \| Supprimer \| .* \| p\.4 #120 \|/);
+  assert.match(out, /Chloé \| introuvable \|/);
 });

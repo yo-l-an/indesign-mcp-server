@@ -74,8 +74,8 @@ Show the PM the image(s) and the change table, then report in three short parts:
 
 **Feedback** (commented PDF, Word comments, tracked changes): `read_feedback({ path, locate: true })` gives one row per item, numbered `#` (PDF), `C1` (Word comment) or `M1` (tracked change).
 
-- *Texte visé* is the text the mark points at; `‸` is an insertion point; replies follow `↳`.
-- *Dans InDesign*: `p.12 #4512` = the text is there (page name, text frame id); `déjà fait ?` = only the corrected text exists; `introuvable` = rewritten since, or a visual remark: place it with the *Page* column.
+- *Texte visé* is the text the mark points at; `‸` is an insertion point; replies follow `↳`. A tracked change (*Suivi*) reads *Texte visé* = before, *Retour* = `→ after`.
+- *Dans InDesign*: `p.12 #4512` = the text is there (page name, text frame id); `déjà fait ?` = only the corrected text exists; `introuvable` = rewritten since, or a visual remark: place it with the *Page* column (*Section* for Word).
 - PDF in spreads: *Page* is the folio printed on the page, else the PDF page and side. A `?` in a reviewer's name comes from the PDF itself.
 
 **Triage** every row before `prepare_edit`:
