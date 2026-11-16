@@ -20,6 +20,7 @@ import { createVectorTools } from './tools/vector-tools.js';
 import { createGraphicsTools } from './tools/graphics-tools.js';
 import { createResourceTools } from './tools/resource-tools.js';
 import { createReviewTools } from './tools/review-tools.js';
+import { createSourceTools } from './tools/source-tools.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -40,7 +41,7 @@ export class InDesignMCPServer {
         capabilities: {
           tools: { listChanged: true },
         },
-        instructions: 'Surgical InDesign corrections for a project manager. Before the first change to a document in a session, read get_usage_guide: the five-step workflow (scope, prepare_edit, change by id, review_compare, close), page names, backups. Backups are permanent: delete them only on the user\'s explicit request.',
+        instructions: 'Surgical InDesign corrections for a project manager. Before the first change to a document in a session, read get_usage_guide: the five-step workflow (scope, prepare_edit, change by id, review_compare, close), page names, backups. Client files (commented PDF, Word brief or feedback): read_feedback / read_source_document, then triage with the project manager before changing anything. Backups are permanent: delete them only on the user\'s explicit request.',
       }
     );
 
@@ -54,7 +55,7 @@ export class InDesignMCPServer {
 
     // Tool modules contribute their own definitions and handlers
     this.workflow = { guideRead: false, prepared: false, reminded: false, backups: new Set(), lastSnapshot: null };
-    const modules = [createReviewTools(this), createExtraTools(this), createVectorTools(this), createGraphicsTools(this), createResourceTools(this)];
+    const modules = [createReviewTools(this), createSourceTools(this), createExtraTools(this), createVectorTools(this), createGraphicsTools(this), createResourceTools(this)];
     this.extra = {
       definitions: modules.flatMap((m) => m.definitions),
       handlers: Object.assign({}, ...modules.map((m) => m.handlers)),
@@ -1043,7 +1044,7 @@ CAUTION: Only do this if you understand the risks and have verified the operatio
   // Tools that change an existing document. The first one called without prepare_edit gets a
   // one-line reminder (once per session; INDESIGN_WORKFLOW_REMINDERS=0 turns it off).
   isModifyingTool(name) {
-    return !/^(get_|list_|measure_|find_text$|find_typography|analyze_|preflight_|render_|view_|zoom_|review_|export_|convert_|navigate_|activate_|open_|create_document$|close_|save_|backup_|restore_|prepare_|package_|execute_)/.test(name);
+    return !/^(get_|list_|read_|measure_|find_text$|find_typography|analyze_|preflight_|render_|view_|zoom_|review_|export_|convert_|navigate_|activate_|open_|create_document$|close_|save_|backup_|restore_|prepare_|package_|execute_)/.test(name);
   }
 
   withWorkflowReminder(name, result) {

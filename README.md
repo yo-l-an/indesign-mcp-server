@@ -1,6 +1,6 @@
 # InDesign MCP Server
 
-A comprehensive **Model Context Protocol (MCP) server** for **Adobe InDesign automation** with **103 tools**. This server enables AI assistants like Claude to directly control Adobe InDesign, automating complex publishing workflows, document creation, and professional layout tasks.
+A comprehensive **Model Context Protocol (MCP) server** for **Adobe InDesign automation** with **105 tools**. This server enables AI assistants like Claude to directly control Adobe InDesign, automating complex publishing workflows, document creation, and professional layout tasks.
 
 ## 🚀 Features
 
@@ -46,6 +46,7 @@ A comprehensive **Model Context Protocol (MCP) server** for **Adobe InDesign aut
 - `review_compare`: only the changed pages, as BEFORE | AFTER images with numbered dotted zones (orange modified, green added, red removed; text edits framed on the changed lines) and a side gutter minimap, cropped to the changed area, plus a change table; a self-contained `report.html`
 - Dated, named backups in `InDesign Agent Backups/` next to the .indd, never deleted by the server; `list_backups` / `restore_backup`
 - `find_text` locates quoted text (page name, frame id, context) without reading whole stories
+- Client files: `read_source_document` reads a Word / PDF brief as Markdown (outline, then slices); `read_feedback` turns a commented PDF (notes, highlights, strike-outs, insertions, replies) or a Word file (comments, tracked changes) into one numbered table, and with `locate: true` finds each item in the open document (still to do, or already done)
 
 ## 🧭 Workflow for agents
 
@@ -57,6 +58,7 @@ find_replace_text({ findText: "12 €", replaceText: "15 €", frameId: 4512 })
 review_compare()                                                  // images + change table
 ```
 
+- **Client files** first: `read_feedback({ path, locate: true })` for a commented PDF or Word file, `read_source_document({ path, outline: true })` for a brief; unclear items go to the project manager before any change.
 - **Pages** are addressed as the project manager names them (page names shown in InDesign); `"+N"` = N-th page of the file.
 - **Backups**: `<document>__YYYY-MM-DD_HHhMMmSS__<reason>.indd` in `InDesign Agent Backups/` next to the document (`INDESIGN_BACKUP_DIR` overrides). Documents converted from an older InDesign version are backed up next to their original file.
 - **Review files** live in `$TMPDIR/indesign-mcp-review/` (removed after 3 days), never in the repository or the document folder.
@@ -206,7 +208,7 @@ New swatches default to **CMYK** (0-100). `hex` or RGB values are converted to C
 ## 🛠️ Tool reference
 
 <!-- TOOLS:START -->
-_103 tools. Generated from the server's tool schemas by `npm run docs`._
+_105 tools. Generated from the server's tool schemas by `npm run docs`._
 
 ### Workflow, review and backups
 
@@ -280,6 +282,31 @@ Go back to a backup, only when the user asks: backs up the current state, closes
 |---|---|---|
 | `backupPath` *(required)* | string | Backup file name from list_backups (or its full path) |
 | `confirmDestructive` | boolean | Must be true: the open document is replaced Default: `false`. |
+
+### Client files (brief and feedback)
+
+#### `read_source_document`
+
+Read a client file (Word .docx, PDF, .doc/.rtf/.odt on macOS, .txt/.md) as Markdown: headings, lists, tables, links, images, comment markers [C1] and tracked changes [+added+] [-removed-]. Long files come in slices: start with outline: true, then read the part you need with offset.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `path` *(required)* | string | Absolute path of the file |
+| `outline` | boolean | Only the outline (headings with their offsets; PDF: pages with their first line) Default: `false`. |
+| `offset` | number | Start of the slice (characters, from the outline or the previous slice) Default: `0`. |
+| `maxChars` | number | Slice length (1000-60000) Default: `15000`. |
+| `pages` | number[] | PDF: page numbers of the PDF file (1-based) to read |
+
+#### `read_feedback`
+
+Client feedback as one numbered table: PDF annotations (notes, highlights, strike-outs, insertions, replacements, drawings, replies and review states) with the text each one points at, or Word comments and tracked changes (before/after). locate: true also finds each item in the active InDesign document (page name + text frame id). Read it before prepare_edit, and ask the project manager about unclear items.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `path` *(required)* | string | Absolute path of the commented PDF or the Word file |
+| `locate` | boolean | Find each item in the active InDesign document Default: `false`. |
+| `pages` | number[] | PDF: only these PDF pages (1-based) |
+| `author` | string | Only the items of this reviewer (part of the name) |
 
 ### Documents
 
@@ -1709,7 +1736,7 @@ node --inspect index.js
 
 This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
 
-The review images use glyphs of [Inter](https://rsms.me/inter/) by Rasmus Andersson (SIL Open Font License 1.1), pre-rendered into `lib/font-atlas.js` by `scripts/build-font-atlas.py`.
+PDF files are read with [pdf.js](https://mozilla.github.io/pdf.js/) (`pdfjs-dist`, Apache 2.0). The review images use glyphs of [Inter](https://rsms.me/inter/) by Rasmus Andersson (SIL Open Font License 1.1), pre-rendered into `lib/font-atlas.js` by `scripts/build-font-atlas.py`.
 
 ## 🙏 Acknowledgments
 
