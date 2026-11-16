@@ -28,7 +28,8 @@
   "author": "lucdesign",
   "license": "MIT",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.31.0"
+    "@modelcontextprotocol/sdk": "^1.31.0",
+    "pdfjs-dist": "^6.4.299"
   },
   "engines": {
     "node": ">=18.0.0"
