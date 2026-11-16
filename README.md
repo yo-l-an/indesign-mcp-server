@@ -1709,6 +1709,8 @@ node --inspect index.js
 
 This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
 
+The review images use glyphs of [Inter](https://rsms.me/inter/) by Rasmus Andersson (SIL Open Font License 1.1), pre-rendered into `lib/font-atlas.js` by `scripts/build-font-atlas.py`.
+
 ## 🙏 Acknowledgments
 
 - **Anthropic** for the Model Context Protocol
