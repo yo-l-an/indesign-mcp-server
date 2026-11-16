@@ -1,6 +1,6 @@
 # InDesign MCP Server
 
-A comprehensive **Model Context Protocol (MCP) server** for **Adobe InDesign automation** with **94 tools**. This server enables AI assistants like Claude to directly control Adobe InDesign, automating complex publishing workflows, document creation, and professional layout tasks.
+A comprehensive **Model Context Protocol (MCP) server** for **Adobe InDesign automation** with **101 tools**. This server enables AI assistants like Claude to directly control Adobe InDesign, automating complex publishing workflows, document creation, and professional layout tasks.
 
 ## 🚀 Features
 
@@ -39,6 +39,28 @@ A comprehensive **Model Context Protocol (MCP) server** for **Adobe InDesign aut
 - Custom ExtendScript execution
 - Batch processing capabilities
 - Professional publishing workflows
+
+### 🧭 **Project-manager workflow**
+- `GUIDE.md` is served to agents by `get_usage_guide` (the server's MCP instructions tell them to read it once per session)
+- `prepare_edit`: one call = backup copy + BEFORE snapshot of the pages the task touches + object ids
+- `review_compare`: only the changed pages, as BEFORE | AFTER images with numbered dashed zones (orange modified, green added, red removed), cropped to the changed area, plus a change table; a self-contained `report.html`
+- Dated, named backups in `InDesign Agent Backups/` next to the .indd, never deleted by the server; `list_backups` / `restore_backup`
+- `find_text` locates quoted text (page name, frame id, context) without reading whole stories
+
+## 🧭 Workflow for agents
+
+See [GUIDE.md](GUIDE.md). In short:
+
+```javascript
+prepare_edit({ pages: ["12"], reason: "correction prix p12" })   // backup + snapshot + ids
+find_replace_text({ findText: "12 €", replaceText: "15 €", frameId: 4512 })
+review_compare()                                                  // images + change table
+```
+
+- **Pages** are addressed as the project manager names them (page names shown in InDesign); `"+N"` = N-th page of the file.
+- **Backups**: `<document>__YYYY-MM-DD_HHhMMmSS__<reason>.indd` in `InDesign Agent Backups/` next to the document (`INDESIGN_BACKUP_DIR` overrides). Documents converted from an older InDesign version are backed up next to their original file.
+- **Review files** live in `$TMPDIR/indesign-mcp-review/` (removed after 3 days), never in the repository or the document folder.
+- A modifying tool called before any `prepare_edit` in a session gets a one-line reminder once (`INDESIGN_WORKFLOW_REMINDERS=0` turns it off).
 
 ## 📋 Prerequisites
 
@@ -184,15 +206,90 @@ New swatches default to **CMYK** (0-100). `hex` or RGB values are converted to C
 ## 🛠️ Tool reference
 
 <!-- TOOLS:START -->
-_94 tools. Generated from the server's tool schemas by `npm run docs`._
+_101 tools. Generated from the server's tool schemas by `npm run docs`._
+
+### Workflow, review and backups
+
+#### `get_usage_guide`
+
+READ ONCE PER SESSION, before the first change to a document: the workflow (prepare_edit -> changes -> review_compare), backups, page addressing, rules of thumb and errors.
+
+_No parameters._
+
+#### `prepare_edit`
+
+ONE CALL BEFORE CHANGING A DOCUMENT. For the pages the task touches: (1) backup copy in "InDesign Agent Backups", (2) BEFORE snapshot of those pages only (temp folder), (3) shows the first page in InDesign, (4) returns one line per object of those pages (id, type, position, text excerpt) so you can act without list_page_items. Then make the changes and call review_compare.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `pages` | any[] | Pages as the user names them (page name shown in InDesign, e.g. ["12", "13"]); "+N" = N-th page of the file |
+| `pageIndexes` | number[] | Alternative: 0-based page indexes |
+| `allPages` | boolean | Snapshot every page: only for document-wide changes (styles, swatches, global replace) Default: `false`. |
+| `reason` *(required)* | string | What the task is, for the backup name, e.g. "correction prix p12" |
+| `backup` | boolean | false = no backup (only if the user declined it or one was made for this task already) Default: `true`. |
+| `listObjects` | boolean | Return the object list of the pages (off when you already know the ids) Default: `true`. |
+| `resolution` | number | Snapshot resolution in dpi (36-150) Default: `72`. |
+
+#### `find_text`
+
+Locate text without reading whole stories: returns each match with page name, pageIndex, text frame id and a short context. Use it when the user quotes text instead of a page, and before a find_replace_text you are not sure about.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `text` *(required)* | string | Text (or GREP with useGrep) to find |
+| `useGrep` | boolean | text is a GREP expression Default: `false`. |
+| `caseSensitive` | boolean | Case-sensitive search (plain text) Default: `false`. |
+| `pages` | any[] | Pages as the user names them (page name shown in InDesign, e.g. ["12", "13"]); "+N" = N-th page of the file |
+| `pageIndexes` | number[] | Alternative: 0-based page indexes |
+| `limit` | number | Maximum matches listed (1-100) Default: `20`. |
+
+#### `review_compare`
+
+AFTER the changes: compares the snapshot pages with the current state. Returns only the changed pages, as BEFORE \| AFTER images with numbered dashed zones (orange modified, green added, red removed), cropped to the changed area, plus a Markdown change table (# \| Page \| Element \| Property \| Before \| After \| Change). Show both to the user. Can be called again after further corrections (always against the same BEFORE).
+
+| Parameter | Type | Description |
+|---|---|---|
+| `snapshotId` | string | From prepare_edit (default: the latest of this session) |
+| `language` | `fr` \| `en` | Language of image labels and table Default: `"fr"`. |
+| `maxImages` | number | Page images returned inline (0-10; all are saved to files). Many changes: lower it and rely on the table Default: `3`. |
+| `crop` | boolean | Crop images to the changed area Default: `true`. |
+| `sensitivity` | `low` \| `normal` \| `high` | Pixel sensitivity for changes no object explains Default: `"normal"`. |
+
+#### `backup_document`
+
+Extra backup outside prepare_edit (e.g. before a risky step): dated, named copy of the active document in "InDesign Agent Backups" next to the .indd. The open document is not changed. Backups are never deleted by the server.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `reason` *(required)* | string | Short description, used in the file name |
+| `backupDir` | string | Optional: another backup folder (inside the allowed directories) |
+
+#### `list_backups`
+
+Backups of the active document (newest first) with date, reason and path, for restore_backup.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `backupDir` | string | Optional: another backup folder |
+
+#### `restore_backup`
+
+Go back to a backup, only when the user asks: backs up the current state, closes the document WITHOUT saving, copies the backup over the .indd and reopens it. Needs confirmDestructive: true. The backup is kept.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `backupPath` *(required)* | string | Backup file name from list_backups (or its full path) |
+| `confirmDestructive` | boolean | Must be true: the open document is replaced Default: `false`. |
 
 ### Documents
 
 #### `get_document_info`
 
-Get detailed information about the active document: size in mm, pages, facing pages, bleed, slug, margins, colour intent/profiles and swatches
+Information about the active document: size in mm, pages (with page names), facing pages, bleed, slug, margins, colour intent/profiles, object counts. Swatch values only with includeSwatches (or use list_color_swatches).
 
-_No parameters._
+| Parameter | Type | Description |
+|---|---|---|
+| `includeSwatches` | boolean | Also list every swatch with its values Default: `false`. |
 
 #### `create_document`
 
@@ -427,7 +524,7 @@ Insert Markdown into a text frame, mapped to EXISTING styles. Each non-blank lin
 
 #### `find_replace_text`
 
-Find and replace text. scope: document, story (the story of the current selection) or selection (needs a text selection)
+Find and replace text. Limit it to where the change belongs: frameId (the story of that frame) or scope story/selection; scope document only for a deliberate global change. Locate first with find_text when unsure. Reports the pages where text was replaced.
 
 | Parameter | Type | Description |
 |---|---|---|
@@ -437,6 +534,7 @@ Find and replace text. scope: document, story (the story of the current selectio
 | `wholeWord` | boolean | Whole word only Default: `false`. |
 | `useGrep` | boolean | Use GREP (regular expressions) Default: `false`. |
 | `scope` | `document` \| `story` \| `selection` |  Default: `"document"`. |
+| `frameId` | number | Only in the story of this text frame (overrides scope) |
 
 #### `get_selected_objects`
 

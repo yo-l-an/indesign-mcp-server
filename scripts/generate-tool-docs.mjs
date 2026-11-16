@@ -9,6 +9,7 @@ import { fileURLToPath } from 'url';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CATEGORIES = [
+  ['Workflow, review and backups', ['get_usage_guide', 'prepare_edit', 'find_text', 'review_compare', 'backup_document', 'list_backups', 'restore_backup']],
   ['Documents', ['get_document_info', 'create_document', 'open_document', 'save_document', 'close_document', 'list_open_documents', 'activate_document', 'view_document', 'zoom_to_page']],
   ['Pages', ['add_page', 'delete_page', 'duplicate_page', 'navigate_to_page']],
   ['Seeing and measuring', ['render_preview', 'measure_text', 'list_page_items', 'get_object_info']],
