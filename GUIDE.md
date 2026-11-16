@@ -8,6 +8,7 @@ Follow the five steps for every task. The reference sections below answer questi
 
 ### 1. Find the scope
 
+- The PM sends client files (a commented PDF, a Word file with comments or tracked changes) → **triage** them first (Client files, below); the pages of the clear rows are the scope.
 - The PM names pages → those page names are the scope (`"12"`, `"iv"`, `"A-3"`, as shown in InDesign).
 - The PM quotes text → `find_text({ text })` gives page, frame id and context for each match; its pages are the scope.
 - Global replace → `find_text` first; the pages it lists are the scope.
@@ -15,7 +16,7 @@ Follow the five steps for every task. The reference sections below answer questi
 - Moving, adding or removing pages → `pages: []` when no page content changes; the backup and the page order are enough, and `review_compare` maps the page order of the whole document.
 - Moving an object to another page → both pages are the scope.
 
-**Done when** you hold the page names of the scope, and nothing outside it has been read.
+**Done when** you hold the page names of the scope, and nothing outside it has been read. With client files: the PM has answered every question of the triage.
 
 ### 2. Prepare
 
@@ -50,7 +51,7 @@ review_compare({ maxImages: 1 })   // many changes: the table carries them
 
 Show the PM the image(s) and the change table, then report in three short parts: **what changed**, **the review**, **open points** (anything not done or not checked).
 
-**Done when** the PM has the images and the table, and every table row matches something they asked for. A row they did not ask for is a side effect: fix it, or explain it in the open points.
+**Done when** the PM has the images and the table, and every table row matches something they asked for. A row they did not ask for is a side effect: fix it, or explain it in the open points. With client feedback: every feedback number is done or listed in the open points.
 
 ### 5. Close the task
 
@@ -68,6 +69,23 @@ Show the PM the image(s) and the change table, then report in three short parts:
 - **Ids** stay valid when objects are added or reordered; `frameIndex` / `index` shift, so ids are the reliable handle.
 - **Millimetres**, origin at the top-left of each page's trim box; negative values reach into the bleed. Angles in degrees, counter-clockwise positive.
 - **One document at a time**: tools act on the active document. With several documents open, or when the PM names another file, check with `list_open_documents` and `activate_document`.
+
+### Client files: feedback and brief
+
+**Feedback** (commented PDF, Word comments, tracked changes): `read_feedback({ path, locate: true })` gives one row per item, numbered `#` (PDF), `C1` (Word comment) or `M1` (tracked change).
+
+- *Texte visé* is the text the mark points at; `‸` is an insertion point; replies follow `↳`.
+- *Dans InDesign*: `p.12 #4512` = the text is there (page name, text frame id); `déjà fait ?` = only the corrected text exists; `introuvable` = rewritten since, or a visual remark: place it with the *Page* column.
+- PDF in spreads: *Page* is the folio printed on the page, else the PDF page and side. A `?` in a reviewer's name comes from the PDF itself.
+
+**Triage** every row before `prepare_edit`:
+
+- **clear**: the exact change is written (insert, delete, replace, "remplacer X par Y", the exact new title) and located.
+- **question**: everything else: a vague remark ("pas beau", "réduire un peu"), a choice to make, an asset still to come ("à venir", "en attente"), reviewers who disagree, a reply that changes the request, `déjà fait ?`, `introuvable`, a drawing.
+
+Send the PM one message: the counts, then the questions by number, each with the answer you propose. Change the clear rows once the PM confirms the triage.
+
+**Brief** to lay out (Word, PDF, .doc/.rtf/.odt on macOS, text): `read_source_document({ path, outline: true })`, then the part you need with `offset`. Markers: `[C1]` comment, `[+added+]` `[-removed-]` tracked change, `[image: …]`, `[encadré: …]` text box. Titles marked by hand (bold, capitals) are inferred, and the header says so.
 
 ### Review output
 
