@@ -40,7 +40,7 @@ export class InDesignMCPServer {
         capabilities: {
           tools: { listChanged: true },
         },
-        instructions: 'InDesign automation. Before the first change to a document in a session, call get_usage_guide once. Per task: prepare_edit({ pages: [<page names the user gave>], reason }) (backup + BEFORE snapshot of those pages + object ids) -> changes by id -> review_compare (show the images and the change table). Go straight to the pages the user names; locate quoted text with find_text instead of reading stories. Never delete backups unless the user explicitly asks.',
+        instructions: 'Surgical InDesign corrections for a project manager. Before the first change to a document in a session, read get_usage_guide: the five-step workflow (scope, prepare_edit, change by id, review_compare, close), page names, backups. Backups are permanent: delete them only on the user\'s explicit request.',
       }
     );
 

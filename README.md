@@ -212,7 +212,7 @@ _101 tools. Generated from the server's tool schemas by `npm run docs`._
 
 #### `get_usage_guide`
 
-READ ONCE PER SESSION, before the first change to a document: the workflow (prepare_edit -> changes -> review_compare), backups, page addressing, rules of thumb and errors.
+Workflow guide: read once per session, before the first change to a document. Five steps (scope, prepare_edit, surgical change, review_compare, close) plus page names, ids, backups, converted documents and errors.
 
 _No parameters._
 

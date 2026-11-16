@@ -415,7 +415,7 @@ export function createReviewTools(server) {
   const definitions = [
     {
       name: 'get_usage_guide',
-      description: 'READ ONCE PER SESSION, before the first change to a document: the workflow (prepare_edit -> changes -> review_compare), backups, page addressing, rules of thumb and errors.',
+      description: 'Workflow guide: read once per session, before the first change to a document. Five steps (scope, prepare_edit, surgical change, review_compare, close) plus page names, ids, backups, converted documents and errors.',
       inputSchema: { type: 'object', properties: {} },
     },
     {
