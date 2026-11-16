@@ -496,7 +496,7 @@ CAUTION: Only do this if you understand the risks and have verified the operatio
         },
         {
           name: 'find_replace_text',
-          description: 'Find and replace text. scope: document, story (the story of the current selection) or selection (needs a text selection)',
+          description: 'Find and replace text. Limit it to where the change belongs: frameId (the story of that frame) or scope story/selection; scope document only for a deliberate global change. Locate first with find_text when unsure. Reports the pages where text was replaced.',
           inputSchema: {
             type: 'object',
             properties: {
@@ -506,6 +506,7 @@ CAUTION: Only do this if you understand the risks and have verified the operatio
               wholeWord: { type: 'boolean', description: 'Whole word only', default: false },
               useGrep: { type: 'boolean', description: 'Use GREP (regular expressions)', default: false },
               scope: { type: 'string', enum: ['document', 'story', 'selection'], default: 'document' },
+              frameId: { type: 'number', description: 'Only in the story of this text frame (overrides scope)' },
             },
             required: ['findText', 'replaceText'],
           },
@@ -2786,13 +2787,16 @@ CAUTION: Only do this if you understand the risks and have verified the operatio
   }
 
   async findReplaceText(args) {
-    const { findText, replaceText, caseSensitive = false, wholeWord = false, useGrep = false, scope = 'document' } = args;
-    if (!['document', 'story', 'selection'].includes(scope)) throw new Error(`Invalid scope: ${scope}`);
+    const { findText, replaceText, caseSensitive = false, wholeWord = false, useGrep = false } = args;
+    const scope = args.frameId !== undefined && args.frameId !== null ? 'frame' : (args.scope || 'document');
+    if (!['document', 'story', 'selection', 'frame'].includes(scope)) throw new Error(`Invalid scope: ${scope}`);
 
     const script = `
       var doc = __requireDoc();
       var target = doc;
-      ${scope === 'story' ? `
+      ${scope === 'frame' ? `
+        target = __textFrame(doc, ${this.jsNum(args.frameId, 'frameId')}, null, null).parentStory;
+      ` : scope === 'story' ? `
         if (app.selection.length === 0 || !app.selection[0].parentStory) throw new Error("scope 'story' needs a selection inside a text story");
         target = app.selection[0].parentStory;
       ` : scope === 'selection' ? `
@@ -2804,18 +2808,18 @@ CAUTION: Only do this if you understand the risks and have verified the operatio
       app.changeTextPreferences = NothingEnum.nothing;
       app.findGrepPreferences = NothingEnum.nothing;
       app.changeGrepPreferences = NothingEnum.nothing;
-      var changeCount = 0;
+      var found = [];
       try {
         ${useGrep ? `
           app.findGrepPreferences.findWhat = ${this.jsStr(findText)};
           app.changeGrepPreferences.changeTo = ${this.jsStr(replaceText)};
-          changeCount = target.changeGrep().length;
+          found = target.changeGrep();
         ` : `
           app.findTextPreferences.findWhat = ${this.jsStr(findText)};
           app.changeTextPreferences.changeTo = ${this.jsStr(replaceText)};
           app.findChangeTextOptions.caseSensitive = ${caseSensitive ? 'true' : 'false'};
           app.findChangeTextOptions.wholeWord = ${wholeWord ? 'true' : 'false'};
-          changeCount = target.changeText().length;
+          found = target.changeText();
         `}
       } finally {
         app.findTextPreferences = NothingEnum.nothing;
@@ -2823,7 +2827,21 @@ CAUTION: Only do this if you understand the risks and have verified the operatio
         app.findGrepPreferences = NothingEnum.nothing;
         app.changeGrepPreferences = NothingEnum.nothing;
       }
-      "Replaced " + changeCount + " instance(s) of " + ${this.jsStr(findText)} + " with " + ${this.jsStr(replaceText)} + " (scope: ${scope})";
+      // Where the replacements landed: page names and frame ids (pasteboard / overset noted)
+      var where = {}, order = [];
+      for (var i = 0; i < found.length; i++) {
+        var key = "overset text";
+        try {
+          var tf = found[i].parentTextFrames;
+          if (tf.length) key = "p." + (tf[0].parentPage ? tf[0].parentPage.name : "pasteboard") + " frame " + tf[0].id;
+        } catch (e) {}
+        if (!where[key]) { where[key] = 0; order.push(key); }
+        where[key]++;
+      }
+      var loc = [];
+      for (var j = 0; j < order.length && j < 30; j++) loc.push(order[j] + (where[order[j]] > 1 ? " (x" + where[order[j]] + ")" : ""));
+      "Replaced " + found.length + " instance(s) of " + ${this.jsStr(findText)} + " with " + ${this.jsStr(replaceText)} + " (scope: ${scope})" +
+        (loc.length ? "\\nWhere: " + loc.join("; ") + (order.length > 30 ? "; ..." : "") : "");
     `;
 
     const result = await this.executeInDesignScript(script);
