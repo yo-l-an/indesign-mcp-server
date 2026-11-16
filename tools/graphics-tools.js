@@ -122,6 +122,7 @@ export function createGraphicsTools(server) {
   const definitions = [
     {
       name: 'render_preview',
+      modifies: false,
       description: 'Render one page (or one object) to PNG and return it directly as an image, so you can see the result without exporting to a folder. Options: pageIndex, objectId (renders just that object), resolution in dpi (default 72), includeBleed. The longest side is limited to 4000 px.',
       inputSchema: {
         type: 'object',
@@ -135,11 +136,13 @@ export function createGraphicsTools(server) {
     },
     {
       name: 'measure_text',
+      modifies: false,
       description: 'Measure a text frame without exporting: line count, the text of every line, the width of every line in mm, the frame width and the overflow state.',
       inputSchema: { type: 'object', properties: { ...FRAME_PROPS } },
     },
     {
       name: 'place_graphic',
+      modifies: true,
       description: 'Place a vector graphic (.svg, .ai, .eps, .pdf) into a new frame (mm). Give width and height for a fixed frame, only one for the aspect ratio, or neither for the natural size (SVG: taken from the root width/height, unitless and px as 1 px = 1 pt). PDF/AI: pdfPage (default 1) and crop (pdf, art, trim, bleed, media, content_visible, content_all). Returns the frame id and whether the result is linked; embed: true unlinks and embeds it.',
       inputSchema: {
         type: 'object',
@@ -154,6 +157,7 @@ export function createGraphicsTools(server) {
     },
     {
       name: 'create_graphic_from_svg',
+      modifies: true,
       description: 'Place SVG markup (a string) as a vector graphic: the server writes it to a temp .svg under $TMPDIR/indesign-mcp/svg/ (or to saveTo) and places it like place_graphic. Use it as the fallback when a native path cannot express something (text as outlines, complex filters). LIMITS: the result is NOT editable as paths in InDesign, and the RGB colours of the SVG are converted to CMYK only at output, through the CMYK profile of the document (accurate, but you cannot dictate exact CMYK numbers). For exact CMYK values use create_path_from_svg with swatches, or create_cmyk_pdf_shape. With embed: true the graphic is embedded and the temp file deleted; otherwise it stays linked to the file (temp files are removed after 3 days). External references, scripts, entities and external url() in the SVG are rejected.',
       inputSchema: {
         type: 'object',
@@ -167,6 +171,7 @@ export function createGraphicsTools(server) {
     },
     {
       name: 'create_cmyk_pdf_shape',
+      modifies: true,
       description: 'Generate a small vector PDF with EXACT CMYK fill/stroke values from SVG path data and place it (like place_graphic). Use it for logos or multi-colour shapes when you need exact brand CMYK numbers (the SVG route converts RGB through the profile) and native paths (create_path_from_svg with one swatch per colour) do not fit. The result is a linked or embedded graphic, not an editable path.',
       inputSchema: {
         type: 'object',
@@ -183,6 +188,12 @@ export function createGraphicsTools(server) {
         },
         required: ['shapes'],
       },
+    },
+    {
+      name: 'view_document',
+      modifies: false,
+      description: 'Get visual representation and detailed info about the current document',
+      inputSchema: { type: 'object', properties: {} },
     },
   ];
 
@@ -235,7 +246,6 @@ export function createGraphicsTools(server) {
       fs.rmSync(file, { force: true });
     }
   };
-  server.renderToPng = renderToPng;
 
   handlers.render_preview = async (args) => {
     const { label, data, w, h, dpi } = await renderToPng(args);
@@ -245,6 +255,48 @@ export function createGraphicsTools(server) {
         { type: 'image', data: data.toString('base64'), mimeType: 'image/png' },
       ],
     };
+  };
+
+  // ---- view_document: document summary + a picture of the current page ----------------
+  handlers.view_document = async () => {
+    const script = `
+      if (app.documents.length === 0) {
+        throw new Error("No document open");
+      } else {
+        var doc = app.activeDocument;
+        var info = "=== DOCUMENT VIEW ===\\n";
+        info += "Document: " + doc.name + "\\n";
+        info += "Current Page: " + (app.activeWindow.activePage ? (app.activeWindow.activePage.documentOffset + 1) : "None") + " of " + doc.pages.length + "\\n";
+        info += "Zoom Level: " + Math.round(app.activeWindow.zoomPercentage) + "%\\n";
+        info += "View: " + app.activeWindow.viewDisplaySetting + "\\n";
+        
+        try {
+          var currentPage = app.activeWindow.activePage || doc.pages[0];
+          info += "\\n=== CURRENT PAGE CONTENT ===\\n";
+          info += "Text Frames: " + currentPage.textFrames.length + "\\n";
+          info += "Images/Rectangles: " + currentPage.rectangles.length + "\\n";
+          info += "Ellipses: " + currentPage.ovals.length + "\\n";
+          info += "Groups: " + currentPage.groups.length + "\\n";
+          info += "Total Objects: " + currentPage.allPageItems.length;
+        } catch (e) {
+          info += "\\nCould not analyze page content: " + e.message;
+        }
+        
+        info;
+      }
+    `;
+
+    const result = await run(script);
+    const response = server.formatResponse(result, "Document View");
+    // Also return a picture of the current page, so the assistant can see the layout
+    const pageNumber = Number((result.match(/Current Page: (\d+)/) || [])[1] || 1);
+    try {
+      const preview = await renderToPng({ pageIndex: pageNumber - 1, resolution: 72 });
+      response.content.push({ type: 'image', data: preview.data.toString('base64'), mimeType: 'image/png' });
+    } catch (error) {
+      response.content[0].text += `\n(page preview unavailable: ${error.message})`;
+    }
+    return response;
   };
 
   // ---- measure_text -----------------------------------------------------------------------

@@ -1,5 +1,5 @@
 /**
- * Checks that every tool method produces parseable ExtendScript (the runtime
+ * Checks that every tool produces parseable ExtendScript (the runtime
  * wrapper evals it as-is and captures the result).
  *
  * `node --check index.js` only validates the server, never the generated
@@ -10,7 +10,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
-import { runTool, parses } from './harness.mjs';
+import { runTool, parses, toolNames } from './harness.mjs';
 
 // Path arguments stay platform-neutral so the test also runs on macOS.
 const TMP = os.tmpdir();
@@ -51,23 +51,12 @@ const ARGS = {
   confirmDestructive: true,
 };
 
-// Every method that builds a script.
-const METHODS = [
-  'getDocumentInfo', 'createDocument', 'openDocument', 'saveDocument', 'closeDocument',
-  'addPage', 'deletePage', 'duplicatePage', 'navigateToPage', 'getSelectedObjects',
-  'getTextContent', 'listTextFrames', 'analyzeEmbeddedObjects', 'insertMarkdownText',
-  'fixTypographyInSelection', 'findTypographyIssues', 'listGrepSearches',
-  'cleanImportedText', 'analyzeTextProblems', 'createTextFrame', 'editTextFrame',
-  'findReplaceText', 'placeImage', 'createRectangle', 'createEllipse',
-  'createParagraphStyle', 'createCharacterStyle', 'modifyCharacterStyle',
-  'modifyParagraphStyle', 'modifyObjectStyle', 'createObjectStyle', 'applyObjectStyle',
-  'applyParagraphStyle', 'listStyles', 'createColorSwatch',
-  'applyColor', 'exportPDF', 'exportImages', 'exportEPUB', 'packageDocument',
-  'viewDocument', 'createTable', 'populateTable', 'createLayer', 'setActiveLayer',
-  'listLayers', 'preflightDocument', 'zoomToPage', 'dataMerge',
-];
+// Every tool, from the registry.
+const TOOLS = await toolNames();
+// Tools that answer without InDesign
+const NO_SCRIPT = new Set(['get_usage_guide']);
 
-for (const method of METHODS) {
+for (const method of TOOLS) {
   test(`${method}: produces parseable ExtendScript`, async () => {
     const { error, script } = await runTool(method, { ...ARGS });
 
@@ -79,6 +68,7 @@ for (const method of METHODS) {
       );
       return;
     }
+    if (NO_SCRIPT.has(method)) return;
     assert.ok(script, `${method} produced no script`);
 
     const res = parses(script);

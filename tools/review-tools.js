@@ -421,11 +421,13 @@ export function createReviewTools(server) {
   const definitions = [
     {
       name: 'get_usage_guide',
+      modifies: false,
       description: 'Workflow guide: read once per session, before the first change to a document. Five steps (scope, prepare_edit, surgical change, review_compare, close) plus page names, ids, backups, converted documents and errors.',
       inputSchema: { type: 'object', properties: {} },
     },
     {
       name: 'find_text',
+      modifies: false,
       description: 'Locate text without reading whole stories: returns each match with page name, pageIndex, text frame id and a short context. Use it when the user quotes text instead of a page, and before a find_replace_text you are not sure about.',
       inputSchema: {
         type: 'object',
@@ -441,6 +443,7 @@ export function createReviewTools(server) {
     },
     {
       name: 'prepare_edit',
+      modifies: false,
       description: `ONE CALL BEFORE CHANGING A DOCUMENT. For the pages the task touches: (1) backup copy in "${BACKUP_FOLDER_NAME}", (2) BEFORE snapshot of those pages only (temp folder), (3) shows the first page in InDesign, (4) returns one line per object of those pages (id, type, position, text excerpt) so you can act without list_page_items. Then make the changes and call review_compare.`,
       inputSchema: {
         type: 'object',
@@ -457,6 +460,7 @@ export function createReviewTools(server) {
     },
     {
       name: 'review_compare',
+      modifies: false,
       description: 'AFTER the changes: compares the snapshot pages with the current state. Returns only the changed pages, as BEFORE | AFTER images with numbered dotted zones (orange modified, green added, red removed; text edits framed on the changed lines) and a side gutter minimap, cropped to the changed area, plus a Markdown change table (# | Page | Element | Property | Before | After | Change). Show both to the user. Can be called again after further corrections (always against the same BEFORE).',
       inputSchema: {
         type: 'object',
@@ -471,6 +475,7 @@ export function createReviewTools(server) {
     },
     {
       name: 'move_page',
+      modifies: true,
       description: 'Move a page within the document, by page name as the user says it ("+N" = N-th page): after or before another page, or to the start / end. Facing-page spreads reflow around it.',
       inputSchema: {
         type: 'object',
@@ -485,6 +490,7 @@ export function createReviewTools(server) {
     },
     {
       name: 'move_to_page',
+      modifies: true,
       description: 'Move an object (by id) to another page, by page name ("+N" = N-th page). It keeps its position on the page unless x / y (mm) are given.',
       inputSchema: {
         type: 'object',
@@ -499,6 +505,7 @@ export function createReviewTools(server) {
     },
     {
       name: 'backup_document',
+      modifies: false,
       description: `Extra backup outside prepare_edit (e.g. before a risky step): dated, named copy of the active document in "${BACKUP_FOLDER_NAME}" next to the .indd. The open document is not changed. Backups are never deleted by the server.`,
       inputSchema: {
         type: 'object',
@@ -511,11 +518,13 @@ export function createReviewTools(server) {
     },
     {
       name: 'list_backups',
+      modifies: false,
       description: `Backups of the active document (newest first) with date, reason and path, for restore_backup.`,
       inputSchema: { type: 'object', properties: { backupDir: { type: 'string', description: 'Optional: another backup folder' } } },
     },
     {
       name: 'restore_backup',
+      modifies: false,
       description: 'Go back to a backup, only when the user asks: backs up the current state, closes the document WITHOUT saving, copies the backup over the .indd and reopens it. Needs confirmDestructive: true. The backup is kept.',
       inputSchema: {
         type: 'object',

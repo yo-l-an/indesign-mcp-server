@@ -84,6 +84,7 @@ export function createVectorTools(server) {
   const definitions = [
     {
       name: 'create_path',
+      modifies: true,
       description: 'Create an editable open or closed Bezier path from anchor points. Each point: x, y (mm) and optionally leftDirection / rightDirection (handle positions, same coordinate system) and pointType. Returns the object id and the resulting points. Example (S-curve band): points [{x:0,y:8,rightDirection:{x:40,y:0}}, {x:120,y:8,leftDirection:{x:80,y:14},rightDirection:{x:160,y:2}}, ...], closed true.',
       inputSchema: {
         type: 'object',
@@ -111,6 +112,7 @@ export function createVectorTools(server) {
     },
     {
       name: 'create_path_from_svg',
+      modifies: true,
       description: 'Create native, editable path(s) from SVG path data (commands M m L l H h V v C c S s Q q T t A a Z z; quadratics and arcs become cubic Beziers). The data is scaled from viewBox (default: the path bounds) into the target rectangle x, y, width, height (mm); one dimension only keeps the aspect ratio. Several sub-paths become one compound path. Example: d "M0 8 C40 0 80 14 120 8 S190 0 216 6 L216 50 L0 50 Z", viewBox "0 0 216 50", x -3, y 55, width 216, height 48.',
       inputSchema: {
         type: 'object',
@@ -128,6 +130,7 @@ export function createVectorTools(server) {
     },
     {
       name: 'edit_path_points',
+      modifies: true,
       description: 'Read or edit the anchor points and handles of an existing path (any rectangle, oval, polygon or line). action: read | add | move | delete | set_type | reverse | set_closed. Coordinates are mm (same system as create_path). Moving an anchor moves its handles with it unless moveHandles is false.',
       inputSchema: {
         type: 'object',
@@ -153,6 +156,7 @@ export function createVectorTools(server) {
     },
     {
       name: 'create_line',
+      modifies: true,
       description: 'Create a straight or curved line between two points (mm). Curve: give controlPoint1 and/or controlPoint2 (Bezier handles). Options: weight (pt), stroke swatch, dash (solid, a stroke style name, or [dash, gap, ...] in pt), endCap, arrowheads (none, simple, simple-wide, triangle, triangle-wide, barbed, curved, circle, circle-solid, square, square-solid, bar).',
       inputSchema: {
         type: 'object',
@@ -180,6 +184,7 @@ export function createVectorTools(server) {
     },
     {
       name: 'create_polygon',
+      modifies: true,
       description: 'Create a regular polygon or a star as an editable path. x, y is the centre and radius the outer radius (mm). innerRadiusRatio (0-1) makes a star; cornerRadius (mm) rounds the corners; rotation in degrees (0 = first corner points up).',
       inputSchema: {
         type: 'object',
@@ -198,6 +203,7 @@ export function createVectorTools(server) {
     },
     {
       name: 'convert_shape',
+      modifies: false,
       description: 'Convert a shape with InDesign\'s Convert Shape: to rectangle, rounded_rectangle, beveled_rectangle, inverse_rounded_rectangle, oval, triangle, polygon (sides, insetPercent, cornerRadius), line, straight_line, open_path or closed_path. Every shape (rectangle, oval, polygon) is an editable path: use edit_path_points to change its points.',
       inputSchema: {
         type: 'object',
@@ -213,6 +219,7 @@ export function createVectorTools(server) {
     },
     {
       name: 'set_corner_options',
+      modifies: true,
       description: 'Set corner effects and radius (mm): option none | rounded | inverse_rounded | inset | bevel | fancy, for all corners or per corner (corners: { top_left: { option, radius }, ... }).',
       inputSchema: {
         type: 'object',
@@ -230,6 +237,7 @@ export function createVectorTools(server) {
     },
     {
       name: 'pathfinder',
+      modifies: true,
       description: 'Pathfinder on a list of object ids; returns the id of the result. union / intersect / exclude_overlap combine all shapes. subtract: the FIRST id is kept and all other shapes are cut out of it. minus_back: the frontmost shape is kept and all shapes behind it are cut out. The source objects are consumed.',
       inputSchema: {
         type: 'object',
@@ -242,6 +250,7 @@ export function createVectorTools(server) {
     },
     {
       name: 'set_object_fill',
+      modifies: true,
       description: 'Change the fill of any existing object (rectangle, oval, path, text frame) in place, so the stacking order is kept. swatch (name or "none"), tint (0-100), opacity of the fill (0-100), or a gradient (name of a gradient swatch) with gradientAngle.',
       inputSchema: {
         type: 'object',
@@ -258,6 +267,7 @@ export function createVectorTools(server) {
     },
     {
       name: 'set_object_stroke',
+      modifies: true,
       description: 'Change the stroke of any existing object in place: swatch (name or "none"), weight (pt), tint, dash (custom [dash, gap, ...] pt, or dashStyle "solid" / a stroke style name), alignment (center, inside, outside), join (miter, round, bevel), miterLimit, cap (butt, round, projecting), opacity of the stroke (0-100).',
       inputSchema: {
         type: 'object',
@@ -279,6 +289,7 @@ export function createVectorTools(server) {
     },
     {
       name: 'create_gradient_swatch',
+      modifies: true,
       description: 'Create a linear or radial gradient swatch from colour stops. stops: [{ swatch, position (0-100), midpoint? (13-87, between this and the previous stop) }]; the first stop must be at 0 and the last at 100. Apply it with set_object_fill (gradient, gradientAngle).',
       inputSchema: {
         type: 'object',
@@ -296,6 +307,7 @@ export function createVectorTools(server) {
     },
     {
       name: 'set_gradient_feather',
+      modifies: true,
       description: 'Fade an object out with a gradient feather (opacity gradient): type linear/radial, angle, startOpacity (default 100) and endOpacity (default 0). remove: true switches it off.',
       inputSchema: {
         type: 'object',
@@ -311,6 +323,7 @@ export function createVectorTools(server) {
     },
     {
       name: 'place_image_in_shape',
+      modifies: true,
       description: 'Place an image into an existing shape (path, rectangle, oval, polygon) which acts as the mask. fitOption FILL_PROPORTIONALLY (crop to fill, default), PROPORTIONALLY, CONTENT_TO_FRAME, CENTER_CONTENT or NONE; then optional contentOffsetX/Y (mm) and contentScale (%). Returns the shape id.',
       inputSchema: {
         type: 'object',
@@ -327,6 +340,7 @@ export function createVectorTools(server) {
     },
     {
       name: 'duplicate_object',
+      modifies: true,
       description: 'Duplicate an object (count copies, each moved by offsetX / offsetY mm relative to the previous one, optionally onto another page). Returns the ids of the copies.',
       inputSchema: {
         type: 'object',
@@ -341,6 +355,7 @@ export function createVectorTools(server) {
     },
     {
       name: 'align_objects',
+      modifies: true,
       description: 'Align objects by id. alignment: left, right, top, bottom, horizontal_center, vertical_center. relativeTo: selection (bounds of the objects), page, margins, spread, bleed, key_object (with keyObjectId).',
       inputSchema: {
         type: 'object',
@@ -355,6 +370,7 @@ export function createVectorTools(server) {
     },
     {
       name: 'distribute_objects',
+      modifies: true,
       description: 'Distribute objects by id. distribution: left_edges, horizontal_centers, right_edges, top_edges, vertical_centers, bottom_edges, horizontal_space, vertical_space. With spacing (mm) the gaps are fixed (horizontal_space / vertical_space).',
       inputSchema: {
         type: 'object',
@@ -369,6 +385,7 @@ export function createVectorTools(server) {
     },
     {
       name: 'get_object_info',
+      modifies: false,
       description: 'Full details of an object: type, page, geometry (mm), rotation, fill (swatch, tint, values), stroke, opacity and blend mode, effects, applied object style, layer, name/label, group membership, and the anchor points of paths.',
       inputSchema: { type: 'object', properties: { ...OBJECT_PROPS } },
     },

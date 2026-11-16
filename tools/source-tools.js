@@ -231,6 +231,7 @@ export function createSourceTools(server) {
   const definitions = [
     {
       name: 'read_source_document',
+      modifies: false,
       description: 'Read a client file (Word .docx, PDF, .doc/.rtf/.odt on macOS, .txt/.md) as Markdown: headings, lists, tables, links, images, comment markers [C1] and tracked changes [+added+] [-removed-]. Long files come in slices: start with outline: true, then read the part you need with offset.',
       inputSchema: {
         type: 'object',
@@ -246,6 +247,7 @@ export function createSourceTools(server) {
     },
     {
       name: 'read_feedback',
+      modifies: false,
       description: 'Client feedback as one numbered table: PDF annotations (notes, highlights, strike-outs, insertions, replacements, drawings, replies and review states) with the text each one points at, or Word comments and tracked changes (before/after). locate: true also finds each item in the active InDesign document (page name + text frame id). Read it before prepare_edit, and ask the project manager about unclear items.',
       inputSchema: {
         type: 'object',

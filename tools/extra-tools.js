@@ -48,6 +48,7 @@ export function createExtraTools(server) {
     // ---------------- objects & layout ----------------
     {
       name: 'list_page_items',
+      modifies: false,
       description: 'List all objects on a page (text frames, rectangles, ovals, polygons, lines, groups, image frames) with id, type, geometry in mm, rotation, fill and overflow state. Objects inside groups are listed with their group id.',
       inputSchema: {
         type: 'object',
@@ -59,11 +60,13 @@ export function createExtraTools(server) {
     },
     {
       name: 'delete_object',
+      modifies: true,
       description: 'Delete a text frame, rectangle, ellipse, image frame or group',
       inputSchema: { type: 'object', properties: { ...OBJECT_PROPS } },
     },
     {
       name: 'rotate_object',
+      modifies: true,
       description: 'Rotate an object. Positive angles turn counter-clockwise (as in the InDesign UI). By default the angle is added to the current rotation; with absolute=true it sets the rotation. reference chooses the pivot point.',
       inputSchema: {
         type: 'object',
@@ -78,6 +81,7 @@ export function createExtraTools(server) {
     },
     {
       name: 'set_object_geometry',
+      modifies: true,
       description: 'Move and/or resize an object (x, y, width, height in mm, top-left of the unrotated frame); optionally set absolute rotation and shear (degrees). Omitted values are kept. Rotation is applied about the object centre.',
       inputSchema: {
         type: 'object',
@@ -99,11 +103,13 @@ export function createExtraTools(server) {
       ['bring_forward', 'Move an object one step forward in the stacking order'],
     ].map(([name, description]) => ({
       name,
+      modifies: true,
       description,
       inputSchema: { type: 'object', properties: { ...OBJECT_PROPS } },
     })),
     {
       name: 'set_object_opacity',
+      modifies: true,
       description: 'Set opacity (0-100) and/or blend mode of an object, its fill or its stroke (e.g. semi-transparent colour bands).',
       inputSchema: {
         type: 'object',
@@ -117,6 +123,7 @@ export function createExtraTools(server) {
     },
     {
       name: 'set_object_overprint',
+      modifies: true,
       description: 'Set overprint for the fill and/or stroke of an object (print production)',
       inputSchema: {
         type: 'object',
@@ -129,6 +136,7 @@ export function createExtraTools(server) {
     },
     {
       name: 'set_text_frame_options',
+      modifies: true,
       description: 'Set text frame options: insets (mm), vertical alignment, columns, auto-size and text wrap (wrap also works on other objects so text flows around them).',
       inputSchema: {
         type: 'object',
@@ -150,6 +158,7 @@ export function createExtraTools(server) {
     },
     {
       name: 'group_objects',
+      modifies: true,
       description: 'Group objects (by id) and return the group id',
       inputSchema: {
         type: 'object',
@@ -159,6 +168,7 @@ export function createExtraTools(server) {
     },
     {
       name: 'ungroup',
+      modifies: true,
       description: 'Ungroup a group; returns the ids of the released objects',
       inputSchema: { type: 'object', properties: { ...OBJECT_PROPS } },
     },
@@ -166,6 +176,7 @@ export function createExtraTools(server) {
     // ---------------- text ----------------
     {
       name: 'apply_character_style_to_range',
+      modifies: true,
       description: 'Apply a character style to a character range of a text frame (e.g. bold words inside a paragraph). Give startIndex/endIndex (inclusive, characters within the story) or matchText to style every occurrence of a text.',
       inputSchema: {
         type: 'object',
@@ -181,6 +192,7 @@ export function createExtraTools(server) {
     },
     {
       name: 'clear_overrides',
+      modifies: true,
       description: 'Remove local formatting overrides from a whole text frame or a character range so the paragraph/character styles show through',
       inputSchema: {
         type: 'object',
@@ -195,11 +207,13 @@ export function createExtraTools(server) {
     // ---------------- documents ----------------
     {
       name: 'list_open_documents',
+      modifies: false,
       description: 'List all open documents with name, page count, saved/modified state and which one is active',
       inputSchema: { type: 'object', properties: {} },
     },
     {
       name: 'activate_document',
+      modifies: false,
       description: 'Make an open document the active one (by name as shown by list_open_documents)',
       inputSchema: {
         type: 'object',
@@ -211,6 +225,7 @@ export function createExtraTools(server) {
     // ---------------- colour ----------------
     {
       name: 'convert_rgb_to_cmyk',
+      modifies: false,
       description: 'Convert an RGB colour (0-255 values or hex) to CMYK percentages. conversion "profile" (default) uses the colour management of InDesign with the CMYK profile of the active document (accurate: hues stay put, and it tells you when the colour is outside the print gamut and how it will really look). "simple" is a plain formula without a profile, needs no document, and shifts hues (greens toward blue).',
       inputSchema: {
         type: 'object',

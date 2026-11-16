@@ -11,6 +11,7 @@ export function createResourceTools(server) {
   const definitions = [
     {
       name: 'update_color_swatch',
+      modifies: true,
       description: 'Change an existing colour swatch in place (all objects using it follow): new values (colorValues CMYK 0-100 or RGB 0-255, or hex), spot/process, and/or a new name. RGB or hex values are converted to CMYK in print documents with the colour management of InDesign unless keepRgb is true. Built-in swatches (Black, Paper, Registration, None) cannot be changed.',
       inputSchema: {
         type: 'object',
@@ -29,6 +30,7 @@ export function createResourceTools(server) {
     },
     {
       name: 'delete_color_swatch',
+      modifies: true,
       description: 'Delete a swatch. If objects or styles use it you must say what replaces it (replaceWith: a swatch name, or "none"); the error lists how it is used.',
       inputSchema: {
         type: 'object',
@@ -41,6 +43,7 @@ export function createResourceTools(server) {
     },
     {
       name: 'list_color_swatches',
+      modifies: false,
       description: 'List all swatches with kind, model and values (colours), base colour and tint (tints), stops (gradients) and where each is used: number of fills, strokes and styles, plus the ids of up to 10 objects. Local text colour overrides inside stories are not counted.',
       inputSchema: {
         type: 'object',
@@ -51,6 +54,7 @@ export function createResourceTools(server) {
     },
     {
       name: 'list_fonts',
+      modifies: false,
       description: 'List installed font families with their styles (use them for fontFamily / fontStyle). Filter with search (substring of the family name) or family (exact name); limit caps the number of families shown.',
       inputSchema: {
         type: 'object',

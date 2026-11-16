@@ -99,7 +99,7 @@ test('counter-check: the same payload through str() does not break out', (t) => 
 });
 
 test('counter-check: the same payload through createTextFrame does not break out', async (t) => {
-  const { error, script } = await runTool('createTextFrame', { ...BASE, content: BREAKOUT });
+  const { error, script } = await runTool('create_text_frame', { ...BASE, content: BREAKOUT });
   assert.ok(!error, 'tool threw unexpectedly: ' + (error && error.message));
   assertNoBreakout(script, t, 'createTextFrame/breakout');
   assert.ok(script.includes(str(BREAKOUT)), 'payload is not present as an escaped literal');
@@ -166,7 +166,7 @@ test('validateFilePath(): system and outside paths are rejected', () => {
 test('createTextFrame: content payloads stay data', async (t) => {
   let checked = 0;
   for (const [name, payload] of Object.entries(PAYLOADS)) {
-    const { error, script } = await runTool('createTextFrame', { ...BASE, content: payload });
+    const { error, script } = await runTool('create_text_frame', { ...BASE, content: payload });
     if (error) continue;                    // rejection is a valid outcome
     assertNoBreakout(script, t, `content/${name}`);
     assert.ok(script.includes(str(payload)), `content/${name}: value is not an escaped literal`);
@@ -177,31 +177,31 @@ test('createTextFrame: content payloads stay data', async (t) => {
 });
 
 test('createTextFrame: fontFamily payload stays data', async (t) => {
-  const { error, script } = await runTool('createTextFrame', { ...BASE, fontFamily: PAYLOADS.fontBreakout });
+  const { error, script } = await runTool('create_text_frame', { ...BASE, fontFamily: PAYLOADS.fontBreakout });
   if (!error) assertNoBreakout(script, t, 'fontFamily');
 });
 
 test('createTextFrame: pageIndex payload is rejected', async () => {
-  const { error, script } = await runTool('createTextFrame', { ...BASE, pageIndex: PAYLOADS.indexBreakout });
+  const { error, script } = await runTool('create_text_frame', { ...BASE, pageIndex: PAYLOADS.indexBreakout });
   assert.ok(error, 'pageIndex payload was not rejected');
   assert.match(error.message, /Invalid (index|parameter "pageIndex")/);
   assert.equal(script, null, 'a script was produced despite rejection');
 });
 
 test('createTextFrame: alignment payload is rejected', async () => {
-  const { error } = await runTool('createTextFrame', { ...BASE, alignment: PAYLOADS.enumBreakout });
+  const { error } = await runTool('create_text_frame', { ...BASE, alignment: PAYLOADS.enumBreakout });
   assert.ok(error, 'alignment payload was not rejected');
   assert.match(error.message, /Invalid (value|parameter "alignment")/);
 });
 
 test('createTextFrame: coordinate payload is rejected', async () => {
-  const { error } = await runTool('createTextFrame', { ...BASE, x: '10mm"]; app.quit(); //' });
+  const { error } = await runTool('create_text_frame', { ...BASE, x: '10mm"]; app.quit(); //' });
   assert.ok(error, 'x payload was not rejected');
   assert.match(error.message, /Invalid (measurement|parameter "x")/);
 });
 
 test('findReplaceText: search and replacement stay data', async (t) => {
-  const { error, script } = await runTool('findReplaceText', {
+  const { error, script } = await runTool('find_replace_text', {
     findText: PAYLOADS.quoteBreakout,
     replaceText: PAYLOADS.trailingBackslash,
     scope: 'document',
@@ -210,7 +210,7 @@ test('findReplaceText: search and replacement stay data', async (t) => {
 });
 
 test('insertMarkdownText: markdown stays data', async (t) => {
-  const { error, script } = await runTool('insertMarkdownText', {
+  const { error, script } = await runTool('insert_markdown_text', {
     markdownText: PAYLOADS.quoteBreakout + '\n' + PAYLOADS.trailingBackslash,
     frameIndex: 0, pageIndex: 0,
   });
@@ -218,7 +218,7 @@ test('insertMarkdownText: markdown stays data', async (t) => {
 });
 
 test('createColorSwatch: colour values must be numbers', async () => {
-  const { error } = await runTool('createColorSwatch', {
+  const { error } = await runTool('create_color_swatch', {
     name: 'x', colorModel: 'PROCESS', colorSpace: 'CMYK',
     colorValues: ['0]; app.quit(); //', 0, 0, 0],
   });
@@ -226,7 +226,7 @@ test('createColorSwatch: colour values must be numbers', async () => {
 });
 
 test('populateTable: table data stays data', async (t) => {
-  const { error, script } = await runTool('populateTable', {
+  const { error, script } = await runTool('populate_table', {
     tableIndex: 0, pageIndex: 0,
     data: [[PAYLOADS.quoteBreakout, PAYLOADS.lineSeparator]],
   });
@@ -234,7 +234,7 @@ test('populateTable: table data stays data', async (t) => {
 });
 
 test('execute_indesign_code stays locked without the opt-in', async () => {
-  const { error, script } = await runTool('executeInDesignCode', { code: 'app.quit();' });
+  const { error, script } = await runTool('execute_indesign_code', { code: 'app.quit();' });
   const locked = Boolean(error) || script === null || /disabled|not enabled/i.test(String(script));
   assert.ok(locked, 'executeInDesignCode was reachable without INDESIGN_ALLOW_ARBITRARY_CODE');
 });

@@ -37,27 +37,22 @@ export async function loadServer() {
   return cached;
 }
 
-/** Tool definitions as served by tools/list. */
-async function toolDefinitions(server) {
-  const list = server.server._requestHandlers.get('tools/list');
-  const { tools } = await list({ method: 'tools/list', params: {} }, {});
-  return tools;
+/** Names of every tool, from the registry. */
+export async function toolNames() {
+  const { server } = await loadServer();
+  return server.registry.names();
 }
 
 /**
- * Call a tool method and return the script it produced.
- * Arguments first pass the same schema validation the tools/call dispatcher
- * applies (createTextFrame -> create_text_frame).
- * If the method throws — an argument was rejected, say — the error is
+ * Call a tool through the registry (schema validation, then the handler) and return the
+ * script it produced. If the call throws — an argument was rejected, say — the error is
  * returned rather than raised.
  */
-export async function runTool(method, args) {
+export async function runTool(name, args) {
   const { server, captured } = await loadServer();
   const before = captured.length;
   try {
-    const toolName = method.replace(/[A-Z]/g, (c) => '_' + c.toLowerCase());
-    const validated = server.validateArguments(toolName, args, await toolDefinitions(server));
-    await server[method](validated);
+    await server.registry.call(name, args);
   } catch (e) {
     return { error: e, script: captured.length > before ? captured[captured.length - 1] : null };
   }
