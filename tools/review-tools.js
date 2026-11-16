@@ -15,42 +15,15 @@ import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { jsStr, jsNum, jsJson } from '../lib/script-runtime.js';
-import { decodePng, encodePng } from '../lib/png.js';
-import {
-  diffInventories, groupRows, pixelDiffRegions, pageStructureDiff, buildPageMap, buildMoveComposite, scaleImage, boundsToRect, intersects, buildPageComposite, changeRows, changesTable, labelsFor, cropRectFor, cropImage,
-} from '../lib/review-diff.js';
+import { decodePng } from '../lib/png.js';
+import { labelsFor } from '../lib/review-diff.js';
+import { compareSnapshots } from '../lib/review.js';
 import { has } from '../lib/tool-context.js';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const GUIDE_PATH = path.join(ROOT, 'GUIDE.md');
 export const BACKUP_FOLDER_NAME = 'InDesign Agent Backups';
 const REVIEW_ROOT_NAME = 'indesign-mcp-review';
-const TEXT_PROPS = new Set(['text', 'tableText']);
-const MAP_THUMB_H = 160;   // page map thumbnail height (px; pages are rendered at 36 dpi, ~420 px for A4)
-
-// Part of g inside r (grown by pad, clipped to r), or null
-const clipRect = (g, r, pad = 0) => {
-  const x0 = Math.max(r.x, g.x - pad), y0 = Math.max(r.y, g.y - pad);
-  const x1 = Math.min(r.x + r.w, g.x + g.w + pad), y1 = Math.min(r.y + r.h, g.y + g.h + pad);
-  return x1 > x0 && y1 > y0 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : null;
-};
-
-// Merge regions closer than pad (fine regions -> one visual zone per area)
-const mergeNear = (rects, pad) => {
-  const out = rects.map((r) => ({ ...r }));
-  for (let i = 0; i < out.length; i++) {
-    for (let j = i + 1; j < out.length; j++) {
-      const a = out[i], b = out[j];
-      if (a.x - pad < b.x + b.w && b.x - pad < a.x + a.w && a.y - pad < b.y + b.h && b.y - pad < a.y + a.h) {
-        const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
-        out[i] = { x, y, w: Math.max(a.x + a.w, b.x + b.w) - x, h: Math.max(a.y + a.h, b.y + b.h) - y };
-        out.splice(j, 1);
-        j = i;
-      }
-    }
-  }
-  return out;
-};
 const REVIEW_MAX_AGE_MS = 3 * 24 * 3600 * 1000;
 const MAX_PAGES = 200;
 
@@ -732,10 +705,7 @@ export function createReviewTools(ctx) {
     const beforeDir = path.join(caseDir, 'before');
     if (!fs.existsSync(path.join(beforeDir, 'inventory.json'))) throw new Error(`Snapshot not found: ${id} (snapshots are removed after 3 days)`);
     const before = JSON.parse(fs.readFileSync(path.join(beforeDir, 'inventory.json'), 'utf8'));
-    const L = labelsFor(args.language || 'fr');
-    const fr = L === labelsFor('fr');
     const maxImages = Math.max(0, Math.min(10, has(args.maxImages) ? jsNum(args.maxImages, 'maxImages') : 3));
-    const sens = { low: { threshold: 60, minPixels: 6 }, normal: { threshold: 40, minPixels: 3 }, high: { threshold: 20, minPixels: 1 } }[args.sensitivity || 'normal'];
 
     // AFTER: the snapshot pages that still exist, plus pages added since (nothing else is read)
     const after = await readInventory(before.pageIds ? before.pages.map((p) => p.id) : null, before.pageIds ? before.document.allPageIds : null);
@@ -749,174 +719,38 @@ export function createReviewTools(ctx) {
     await renderPages(after.pages, before.resolution, afterDir);
     fs.writeFileSync(path.join(afterDir, 'inventory.json'), JSON.stringify(after));
 
-    let diff = diffInventories(before, after);
-    // Objects missing from the scope may have moved to a page outside it: find their page and
-    // add it to AFTER, so they show as moved instead of removed
-    const missing = diff.changes.filter((c) => c.kind === 'removed').map((c) => c.id);
-    if (missing.length) {
-      const found = String(await run(`
+    const decoded = (f) => (fs.existsSync(f) ? decodePng(fs.readFileSync(f)) : null);
+    const source = {
+      pageImage: (side, pid) => decoded(path.join(side === 'before' ? beforeDir : afterDir, `page-${pid}.png`)),
+      locatePages: async (ids) => String(await run(`
         var doc = __requireDoc();
-        var ids = ${JSON.stringify(missing.map(Number))}, out = [];
+        var ids = ${JSON.stringify(ids.map(Number))}, out = [];
         for (var i = 0; i < ids.length; i++) {
           var it = __findById(doc, ids[i]);
           try { if (it && it.parentPage) out.push(it.parentPage.id); } catch (e) {}
         }
         "P:" + out.join(",");
-      `)).replace(/^P:/, '').split(',').filter(Boolean).map(Number);
-      const extra = [...new Set(found)].filter((pid) => !after.pages.some((p) => p.id === pid));
-      if (extra.length) {
-        const more = await readInventory(extra);
+      `)).replace(/^P:/, '').split(',').filter(Boolean).map(Number),
+      addPages: async (ids) => {
+        const more = await readInventory(ids);
         await renderPages(more.pages, before.resolution, afterDir);
-        after.pages.push(...more.pages);
-        fs.writeFileSync(path.join(afterDir, 'inventory.json'), JSON.stringify(after));
-        diff = diffInventories(before, after);
-      }
-    }
-    const isMove = (c) => c.kind === 'modified' && c.props.some((p) => p.prop === 'page');
-    const imageCache = new Map();
-    const pageImage = (dir, pid) => {
-      const f = path.join(dir, `page-${pid}.png`);
-      if (!fs.existsSync(f)) return null;
-      if (!imageCache.has(f)) imageCache.set(f, decodePng(fs.readFileSync(f)));
-      return imageCache.get(f);
+        return more.pages;
+      },
+      thumbnails: async (pages) => {
+        const thumbDir = path.join(afterDir, 'thumbs');
+        fs.mkdirSync(thumbDir, { recursive: true });
+        await renderPages(pages, 36, thumbDir);
+        return new Map(pages.map((p) => [p.id, decoded(path.join(thumbDir, `page-${p.id}.png`))]));
+      },
     };
-    const pageKeys = [...new Set([...before.pages.map((p) => p.id), ...after.pages.map((p) => p.id)])];
-    const visualZones = [];
-    let nextZone = diff.changes.length + 1;
-    const pagesOut = [];
-    for (const pid of pageKeys) {
-      const pb = before.pages.find((p) => p.id === pid) || null;
-      const pa = after.pages.find((p) => p.id === pid) || null;
-      let imgB = pb ? pageImage(beforeDir, pid) : null;
-      let imgA = pa ? pageImage(afterDir, pid) : null;
-      let beforeZones = [], afterZones = [];
-      const sameSize = imgB && imgA && imgB.width === imgA.width && imgB.height === imgA.height;
-      const regions = imgB && imgA ? pixelDiffRegions(imgB, imgA, { cell: 4, gap: 1, ...sens }) : [];
-      const explained = [];
-      const isTextOnly = (c) => c.kind === 'modified' && c.props.every((p) => TEXT_PROPS.has(p.prop));
-      // Areas of the other changes (moves, fills, added, removed objects) on this page: their pixels
-      // must not be attributed to a text change in an object underneath
-      const otherRects = [];
-      for (const c of diff.changes) {
-        if (isTextOnly(c) && !isMove(c)) continue;
-        if (c.before && c.kind !== 'added' && c.before.pageId === pid && imgB) { const r = boundsToRect(c.before.bounds, pb.widthMm, imgB); if (r) otherRects.push(r); }
-        if (c.after && c.kind !== 'removed' && c.after.pageId === pid && imgA) { const r = boundsToRect(c.after.bounds, pa.widthMm, imgA); if (r) otherRects.push(r); }
-      }
-      const area = (r) => r.w * r.h;
-      const mostlyIn = (g, o) => { const i = clipRect(g, o); return i && area(i) > 0.5 * area(g); };
-      // A text-only change marks the changed lines (pixel areas inside the object), not the whole
-      // frame, so a one-word edit shows as a small zone and a short gutter bar
-      const zonesFor = (c, r) => {
-        explained.push(r);
-        if (!isTextOnly(c) || !sameSize) return [r];
-        const near = Math.max(6, Math.round(imgA.width / 80));
-        const own = regions.filter((g) => intersects(g, r) && !otherRects.some((o) => mostlyIn(g, o)));
-        const inside = mergeNear(own.map((g) => clipRect(g, r, 2)).filter(Boolean), near);
-        return inside.length ? inside : [r];
-      };
-      for (const c of diff.changes) {
-        if (isMove(c)) {
-          // shown in the move image; here it only explains its pixels
-          if (c.before.pageId === pid && imgB) { const r = boundsToRect(c.before.bounds, pb.widthMm, imgB); if (r) explained.push(r); }
-          if (c.after.pageId === pid && imgA) { const r = boundsToRect(c.after.bounds, pa.widthMm, imgA); if (r) explained.push(r); }
-          continue;
-        }
-        if (c.kind !== 'added' && c.before.pageId === pid && imgB) {
-          const r = boundsToRect(c.before.bounds, pb.widthMm, imgB);
-          if (r) zonesFor(c, r).forEach((rect, i) => beforeZones.push({ rect, zone: c.zone, kind: c.kind, noLabel: i > 0 }));
-        }
-        if (c.kind !== 'removed' && c.after.pageId === pid && imgA) {
-          const r = boundsToRect(c.after.bounds, pa.widthMm, imgA);
-          if (r) zonesFor(c, r).forEach((rect, i) => afterZones.push({ rect, zone: c.zone, kind: c.kind, noLabel: i > 0 }));
-        }
-      }
-      if (imgB && imgA) {
-        const pad = Math.round(imgA.width / 100);
-        for (const r of mergeNear(regions, pad)) {
-          if (explained.some((e) => intersects(r, e, pad))) continue;
-          const zone = nextZone++;
-          visualZones.push({ zone, pageNumber: pa.name, rect: r, renamedFrom: pb.name !== pa.name ? pb.name : null });
-          beforeZones.push({ rect: r, zone, kind: 'visual' });
-          afterZones.push({ rect: r, zone, kind: 'visual' });
-        }
-      }
-      // No zone: nothing to show (an empty added or removed page is in the page map)
-      if (!beforeZones.length && !afterZones.length) continue;
-      // Crop both sides to the same changed area (same page size only)
-      let cropped = false;
-      if (args.crop !== false && imgB && imgA && imgB.width === imgA.width && imgB.height === imgA.height) {
-        const cr = cropRectFor([...beforeZones, ...afterZones].map((z) => z.rect), imgA.width, imgA.height);
-        if (cr) {
-          const shift = (zones) => zones.map((z) => ({ zone: z.zone, kind: z.kind, noLabel: z.noLabel, rect: { ...z.rect, x: z.rect.x - cr.x, y: z.rect.y - cr.y } }));
-          imgB = cropImage(imgB, cr); imgA = cropImage(imgA, cr);
-          beforeZones = shift(beforeZones); afterZones = shift(afterZones);
-          cropped = true;
-        }
-      }
-      const page = pa || pb;
-      const composite = buildPageComposite({ before: imgB, after: imgA, beforeZones, afterZones, pageNumber: page.name, beforeName: pb ? pb.name : page.name, afterName: pa ? pa.name : page.name, L, cropped });
-      const file = path.join(afterDir, `review-page-${String(page.index + 1).padStart(3, '0')}.png`);
-      const png = encodePng(composite);
-      fs.writeFileSync(file, png);
-      pagesOut.push({ index: page.index, name: page.name, file, png, caption: `${L.page} ${page.name} – ${new Set([...beforeZones, ...afterZones].map((z) => z.zone)).size} zone(s)` });
-    }
-    pagesOut.sort((x, y) => x.index - y.index);
+    const { images, rows: allRows, table, summary, title, L } = await compareSnapshots({
+      before, after, source, language: args.language || 'fr', sensitivity: args.sensitivity || 'normal', crop: args.crop !== false,
+    });
+    const fr = L === labelsFor('fr');
+    fs.writeFileSync(path.join(afterDir, 'inventory.json'), JSON.stringify(after));   // may have gained pages
+    const imagesOut = images.map((img) => ({ ...img, file: path.join(afterDir, img.file) }));
+    for (const img of imagesOut) fs.writeFileSync(img.file, img.png);
 
-    // Objects that changed page: one image per (source page, destination page)
-    const movesOut = [];
-    const groups = new Map();
-    for (const c of diff.changes.filter(isMove)) {
-      const k = `${c.before.pageId}>${c.after.pageId}`;
-      if (!groups.has(k)) groups.set(k, []);
-      groups.get(k).push(c);
-    }
-    for (const list of groups.values()) {
-      const c0 = list[0];
-      const pb = before.pages.find((p) => p.id === c0.before.pageId), pa = after.pages.find((p) => p.id === c0.after.pageId);
-      const src = pb && pageImage(beforeDir, pb.id), dst = pa && pageImage(afterDir, pa.id);
-      if (!src || !dst) continue;
-      const links = list.map((c) => ({ zone: c.zone, from: boundsToRect(c.before.bounds, pb.widthMm, src), to: boundsToRect(c.after.bounds, pa.widthMm, dst) })).filter((l) => l.from && l.to);
-      if (!links.length) continue;
-      const png = encodePng(buildMoveComposite({ src: { img: src, name: pb.name }, dst: { img: dst, name: pa.name }, links, L }));
-      const file = path.join(afterDir, `review-move-${String(pb.index + 1).padStart(3, '0')}-to-${String(pa.index + 1).padStart(3, '0')}.png`);
-      fs.writeFileSync(file, png);
-      movesOut.push({ file, png, caption: `${L.page} ${pb.name} → ${L.page} ${pa.name} – ${links.length} ${fr ? 'objet(s) déplacé(s)' : 'object(s) moved'}` });
-    }
-
-    // Pages added, removed or reordered: page map with thumbnails (current pages rendered small)
-    const mapOut = [];
-    const pageRows = diff.docChanges.filter((d) => d.scope === 'page');
-    if (pageRows.length && after.document.allPages) {
-      const thumbDir = path.join(afterDir, 'thumbs');
-      fs.mkdirSync(thumbDir, { recursive: true });
-      const curPages = after.document.allPages.map((p, i) => ({ ...p, index: i }));
-      await renderPages(curPages, 36, thumbDir);
-      const thumb = (img) => (img ? scaleImage(img, Math.max(8, Math.round((img.width * MAP_THUMB_H) / img.height)), MAP_THUMB_H) : null);
-      const afterList = curPages.map((p) => ({ id: p.id, name: p.name, spread: p.spread, side: p.side, thumb: thumb(pageImage(thumbDir, p.id)) }));
-      const byId = new Map(afterList.map((p) => [p.id, p.thumb]));
-      const beforeList = (before.document.allPages || before.document.allPageIds.map((pid) => ({ id: pid, name: '?' })))
-        .map((p) => ({ id: p.id, name: p.name, spread: p.spread, side: p.side, thumb: byId.get(p.id) || thumb(pageImage(beforeDir, p.id)) }));
-      const st = pageStructureDiff(before.document.allPageIds, after.document.allPageIds);
-      const png = encodePng(buildPageMap({ before: beforeList, after: afterList, st, L }));
-      const file = path.join(afterDir, 'review-pages.png');
-      fs.writeFileSync(file, png);
-      mapOut.push({ file, png, caption: fr ? `Plan des pages – ${st.moved.length} déplacée(s), ${st.added.length} ajoutée(s), ${st.removed.length} supprimée(s)` : `Page map – ${st.moved.length} moved, ${st.added.length} added, ${st.removed.length} removed` });
-    }
-    const imagesOut = [...mapOut, ...movesOut, ...pagesOut];
-
-    const allRows = changeRows(diff, visualZones, L);
-    const rows = groupRows(allRows);
-    const table = rows.length ? changesTable(rows, L) : '';
-    const counts = { modified: 0, added: 0, removed: 0, moved: 0 };
-    diff.changes.forEach((c) => counts[isMove(c) ? 'moved' : c.kind]++);
-    const pagesList = [...new Set([...pagesOut.map((p) => p.name), ...diff.changes.filter(isMove).map((c) => c.after.pageName)])].sort((x, y) => (parseInt(x, 10) || 0) - (parseInt(y, 10) || 0)).join(', ') || '—';
-    const summary = !allRows.length
-      ? (fr ? 'Aucune différence détectée.' : 'No difference found.')
-      : fr
-        ? `${counts.modified} modifié(s), ${counts.added} ajouté(s), ${counts.removed} supprimé(s)${counts.moved ? `, ${counts.moved} déplacé(s) vers une autre page` : ''}${visualZones.length ? `, ${visualZones.length} zone(s) visuelle(s)` : ''}${diff.docChanges.length ? `, ${diff.docChanges.length} au niveau document` : ''} – pages ${pagesList}.`
-        : `${counts.modified} modified, ${counts.added} added, ${counts.removed} removed${counts.moved ? `, ${counts.moved} moved to another page` : ''}${visualZones.length ? `, ${visualZones.length} visual area(s)` : ''}${diff.docChanges.length ? `, ${diff.docChanges.length} document-level` : ''} – pages ${pagesList}.`;
-
-    const title = fr ? `Revue des modifications – ${after.document.name}` : `Change review – ${after.document.name}`;
     const htmlFile = path.join(afterDir, 'report.html');
     fs.writeFileSync(htmlFile, reportHtml({ title, summary, pages: imagesOut, rows: allRows, L }));
 

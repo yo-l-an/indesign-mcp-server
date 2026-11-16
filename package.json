@@ -12,7 +12,7 @@
     "test:document": "node tests/test-document.mjs",
     "test:offline": "node tests/svg-path.test.mjs && node tests/script-syntax.mjs && npm run test:injection",
     "test:scripts": "node tests/script-syntax.mjs",
-    "test:injection": "node --test test/scripts.test.mjs test/injection.test.mjs test/review.test.mjs test/sources.test.mjs test/executor.test.mjs test/policy.test.mjs test/tool-context.test.mjs",
+    "test:injection": "node --test test/scripts.test.mjs test/injection.test.mjs test/review.test.mjs test/sources.test.mjs test/executor.test.mjs test/policy.test.mjs test/tool-context.test.mjs test/review-compare.test.mjs",
     "docs": "node scripts/generate-tool-docs.mjs"
   },
   "keywords": [
