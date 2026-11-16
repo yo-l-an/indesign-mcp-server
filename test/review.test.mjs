@@ -5,7 +5,8 @@ import assert from 'node:assert/strict';
 import { createImage, decodePng, encodePng } from '../lib/png.js';
 import {
   pixelDiffRegions, diffInventories, textDiffCells, changeRows, changesTable, groupRows, labelsFor,
-  cropRectFor, cropImage, boundsToRect, fillRect, buildPageComposite, drawGutter, ORANGE, GREEN,
+  cropRectFor, cropImage, boundsToRect, fillRect, buildPageComposite, drawGutter, ORANGE, GREEN, RED,
+  pageStructureDiff, pageMapRows, buildPageMap, buildMoveComposite,
 } from '../lib/review-diff.js';
 import { resolvePageRefs, backupFileName, slugify, pageSummary } from '../tools/review-tools.js';
 
@@ -170,4 +171,49 @@ test('page summary folds small shapes and shows text excerpts', () => {
   ]));
   assert.match(s, /id=1 TextFrame x10 y10 90×40 \[Titre\] «Titre ¶ Corps»/);
   assert.match(s, /\+ 2 small shapes .*ids 2, 3/);
+});
+
+test('page structure: moved, added and removed pages by id', () => {
+  const st = pageStructureDiff([1, 2, 3, 4, 5, 6], [1, 3, 4, 2, 7, 6]);
+  assert.deepEqual(st.moved, [2]);
+  assert.deepEqual(st.removed, [5]);
+  assert.deepEqual(st.added, [7]);
+  assert.ok(st.stable.has(1) && st.stable.has(6));
+});
+
+test('a reordered page does not flag its objects; an object on another page is a move', () => {
+  const p = (id, number, items) => ({ id, number, name: String(number), widthMm: 210, items });
+  const before = { document: { allPageIds: [1, 2], allPages: [{ id: 1, name: '1' }, { id: 2, name: '2' }] }, pages: [p(1, 1, [{ id: 10, type: 'Oval', bounds: [0, 0, 5, 5] }]), p(2, 2, [{ id: 11, type: 'Oval', bounds: [0, 0, 5, 5] }])] };
+  const after = { document: { allPageIds: [2, 1], allPages: [{ id: 2, name: '1' }, { id: 1, name: '2' }] }, pages: [p(2, 1, [{ id: 11, type: 'Oval', bounds: [0, 0, 5, 5] }, { id: 10, type: 'Oval', bounds: [0, 0, 5, 5] }]), p(1, 2, [])] };
+  const d = diffInventories(before, after);
+  assert.equal(d.changes.length, 1, 'only object 10 changed (it moved to page 2)');
+  assert.equal(d.changes[0].id, 10);
+  assert.deepEqual(d.changes[0].props.map((x) => x.prop), ['page']);
+  assert.equal(d.docChanges.filter((x) => x.scope === 'page' && x.kind === 'moved').length, 1);
+  const rows = changeRows(d, [], labelsFor('fr'));
+  assert.ok(rows.some((r) => r.kind === 'Déplacé' && r.property === 'Page'));
+});
+
+test('page map aligns rows like a diff and folds long unchanged runs', () => {
+  const pages = (ids) => ids.map((id) => ({ id, name: String(id), thumb: null }));
+  const b = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], a = [1, 2, 3, 4, 5, 6, 7, 9, 8, 10, 11];
+  const st = pageStructureDiff(b, a);
+  const rows = pageMapRows(pages(b), pages(a), st);
+  assert.ok(rows[0].fold >= 3, 'the unchanged start is folded');
+  assert.ok(rows.some((r) => r.right && r.right.id === 11 && r.kindR === 'added'));
+  const img = buildPageMap({ before: pages(b), after: pages(a), st, L: labelsFor('fr') });
+  assert.ok(img.width > 200 && img.height > 100);
+});
+
+test('move image draws an arrow between the two pages', () => {
+  const page = createImage(200, 280);
+  const out = buildMoveComposite({ src: { img: page, name: '3' }, dst: { img: page, name: '7' }, links: [{ zone: 1, from: { x: 20, y: 100, w: 40, h: 20 }, to: { x: 120, y: 200, w: 40, h: 20 } }], L: labelsFor('fr') });
+  const { beforeX, afterX, top } = out.layout;
+  const midX = Math.round((beforeX + 60 + afterX + 120) / 2);
+  let found = false;
+  for (let y = top; y < out.height && !found; y++) {
+    const o = (y * out.width + midX) * 4;
+    if (out.data[o] === ORANGE[0] && out.data[o + 1] === ORANGE[1]) found = true;
+  }
+  assert.ok(found, 'orange arrow crosses the middle');
 });

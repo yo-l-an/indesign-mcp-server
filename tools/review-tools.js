@@ -17,7 +17,7 @@ import { fileURLToPath } from 'url';
 import { jsStr, jsNum, jsJson } from '../lib/script-runtime.js';
 import { decodePng, encodePng } from '../lib/png.js';
 import {
-  diffInventories, groupRows, pixelDiffRegions, boundsToRect, intersects, buildPageComposite, changeRows, changesTable, labelsFor, cropRectFor, cropImage,
+  diffInventories, groupRows, pixelDiffRegions, pageStructureDiff, buildPageMap, buildMoveComposite, scaleImage, boundsToRect, intersects, buildPageComposite, changeRows, changesTable, labelsFor, cropRectFor, cropImage,
 } from '../lib/review-diff.js';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -172,10 +172,11 @@ function inventoryScript(pageIds, knownIds = null) {
     var want = null, known = null;
     ${pageIds ? `want = {}; var __w = ${JSON.stringify(pageIds.map(Number))}; for (var w = 0; w < __w.length; w++) want[__w[w]] = 1;` : ''}
     ${knownIds ? `known = {}; var __k = ${JSON.stringify(knownIds.map(Number))}; for (var w2 = 0; w2 < __k.length; w2++) known[__k[w2]] = 1;` : ''}
-    var pages = [], allIds = [];
+    var pages = [], allIds = [], allPg = [];
     for (var p = 0; p < doc.pages.length; p++) {
       var pg = doc.pages[p];
       allIds.push(pg.id);
+      allPg.push({ id: pg.id, name: pg.name });
       if (want && !want[pg.id] && !(known && !known[pg.id])) continue;
       var pb = pg.bounds;
       var items = [], all = pg.allPageItems;
@@ -217,7 +218,7 @@ function inventoryScript(pageIds, knownIds = null) {
     var path = null;
     if (__hasFile(doc)) path = doc.fullName.fsName;
     "INVENTORY\\n" + __js({
-      document: { name: doc.name, path: path, modified: doc.modified, pageCount: doc.pages.length, allPageIds: allIds,
+      document: { name: doc.name, path: path, modified: doc.modified, pageCount: doc.pages.length, allPageIds: allIds, allPages: allPg,
         paragraphStyles: __styles(doc.allParagraphStyles, true), characterStyles: __styles(doc.allCharacterStyles, false), swatches: sw },
       pages: pages
     });
@@ -332,8 +333,9 @@ export function createReviewTools(server) {
     if (args.allPages === true) return null;
     const refs = Array.isArray(args.pages) ? args.pages : [];
     const idx = Array.isArray(args.pageIndexes) ? args.pageIndexes : [];
+    if (Array.isArray(args.pages) && !args.pages.length && !idx.length) return [];   // page order only
     if (!refs.length && !idx.length) {
-      if (required) throw new Error('Say which pages: pages (names as shown in InDesign, e.g. ["12"]) or pageIndexes (0-based). allPages: true only for document-wide changes.');
+      if (required) throw new Error('Say which pages: pages (names as shown in InDesign, e.g. ["12"]) or pageIndexes (0-based); pages: [] when only the page order changes; allPages: true only for document-wide changes.');
       return null;
     }
     const pages = await readPages();
@@ -408,7 +410,7 @@ export function createReviewTools(server) {
   };
 
   const PAGE_REF_PROPS = {
-    pages: { type: 'array', items: {}, description: 'Pages as the user names them (page name shown in InDesign, e.g. ["12", "13"]); "+N" = N-th page of the file' },
+    pages: { type: 'array', items: {}, description: 'Pages as the user names them (page name shown in InDesign, e.g. ["12", "13"]); "+N" = N-th page of the file; [] = page order only (moving, adding, removing pages)' },
     pageIndexes: { type: 'array', items: { type: 'number' }, description: 'Alternative: 0-based page indexes' },
   };
 
@@ -461,6 +463,34 @@ export function createReviewTools(server) {
           crop: { type: 'boolean', description: 'Crop images to the changed area', default: true },
           sensitivity: { type: 'string', enum: ['low', 'normal', 'high'], description: 'Pixel sensitivity for changes no object explains', default: 'normal' },
         },
+      },
+    },
+    {
+      name: 'move_page',
+      description: 'Move a page within the document, by page name as the user says it ("+N" = N-th page): after or before another page, or to the start / end. Facing-page spreads reflow around it.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          page: { type: 'string', description: 'Page to move (page name, or "+N")' },
+          after: { type: 'string', description: 'Put it after this page' },
+          before: { type: 'string', description: 'Put it before this page' },
+          position: { type: 'string', enum: ['start', 'end'], description: 'Or: first / last page of the document' },
+        },
+        required: ['page'],
+      },
+    },
+    {
+      name: 'move_to_page',
+      description: 'Move an object (by id) to another page, by page name ("+N" = N-th page). It keeps its position on the page unless x / y (mm) are given.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          id: { type: 'number', description: 'Object id' },
+          page: { type: 'string', description: 'Destination page (page name, or "+N")' },
+          x: { type: 'number', description: 'New left edge in mm (default: unchanged)' },
+          y: { type: 'number', description: 'New top edge in mm (default: unchanged)' },
+        },
+        required: ['id', 'page'],
       },
     },
     {
@@ -574,11 +604,47 @@ export function createReviewTools(server) {
     try {
       if (inv.pages.length) await run(`var doc = __requireDoc(); app.activeWindow.activePage = doc.pages[${inv.pages[0].index}]; "ok";`);
     } catch { /* no window (e.g. document opened without one): not needed */ }
-    lines.push(`Snapshot: snapshotId=${id} – ${pageRange(inv.pages)}`);
-    if (args.listObjects !== false && inv.pages.length <= 6) lines.push('', ...inv.pages.map((p) => pageSummary(p)));
+    lines.push(`Snapshot: snapshotId=${id} – ${inv.pages.length ? pageRange(inv.pages) : 'page order only'}`);
+    if (args.listObjects !== false && inv.pages.length && inv.pages.length <= 6) lines.push('', ...inv.pages.map((p) => pageSummary(p)));
     else if (args.listObjects !== false) lines.push(`(${inv.pages.length} pages: object lists omitted; use list_page_items or find_text for the page you work on)`);
     lines.push('', 'Next: make the changes (use the ids), then review_compare.');
     return { content: [{ type: 'text', text: lines.join('\n') }] };
+  };
+
+  handlers.move_page = async (args) => {
+    const pages = await readPages();
+    const [page] = resolvePageRefs([args.page], pages);
+    let where;
+    if (has(args.after)) where = `LocationOptions.AFTER, doc.pages.itemByID(${resolvePageRefs([args.after], pages)[0].id})`;
+    else if (has(args.before)) where = `LocationOptions.BEFORE, doc.pages.itemByID(${resolvePageRefs([args.before], pages)[0].id})`;
+    else if (args.position === 'start') where = 'LocationOptions.AT_BEGINNING';
+    else if (args.position === 'end') where = 'LocationOptions.AT_END';
+    else throw new Error('Say where: after, before, or position ("start" / "end")');
+    const out = await run(`
+      var doc = __requireDoc();
+      var pg = doc.pages.itemByID(${page.id});
+      var from = pg.documentOffset + 1;
+      pg.move(${where});
+      pg = doc.pages.itemByID(${page.id});
+      "Moved page " + pg.name + ": position " + from + " -> " + (pg.documentOffset + 1) + " of " + doc.pages.length;
+    `);
+    return server.formatResponse(out, 'Move Page');
+  };
+
+  handlers.move_to_page = async (args) => {
+    const [page] = resolvePageRefs([args.page], await readPages());
+    const out = await run(`
+      var doc = __requireDoc();
+      var it = __resolve(doc, ${jsNum(args.id, 'id')}, null, null);
+      var from = it.parentPage ? it.parentPage.name : "pasteboard";
+      var b = it.geometricBounds, w = b[3] - b[1], h = b[2] - b[0];
+      var x = ${has(args.x) ? jsNum(args.x, 'x') : 'b[1]'}, y = ${has(args.y) ? jsNum(args.y, 'y') : 'b[0]'};
+      var target = doc.pages.itemByID(${page.id});
+      it.move(target);
+      it.geometricBounds = [y, x, y + h, x + w];
+      "Moved " + it.constructor.name + " id=" + it.id + " from page " + from + " to page " + it.parentPage.name + " at x=" + __r(x) + " y=" + __r(y);
+    `);
+    return server.formatResponse(out, 'Move To Page');
   };
 
   handlers.backup_document = async (args) => {
@@ -668,7 +734,37 @@ export function createReviewTools(server) {
     await renderPages(after.pages, before.resolution, afterDir);
     fs.writeFileSync(path.join(afterDir, 'inventory.json'), JSON.stringify(after));
 
-    const diff = diffInventories(before, after);
+    let diff = diffInventories(before, after);
+    // Objects missing from the scope may have moved to a page outside it: find their page and
+    // add it to AFTER, so they show as moved instead of removed
+    const missing = diff.changes.filter((c) => c.kind === 'removed').map((c) => c.id);
+    if (missing.length) {
+      const found = String(await run(`
+        var doc = __requireDoc();
+        var ids = ${JSON.stringify(missing.map(Number))}, out = [];
+        for (var i = 0; i < ids.length; i++) {
+          var it = __findById(doc, ids[i]);
+          try { if (it && it.parentPage) out.push(it.parentPage.id); } catch (e) {}
+        }
+        "P:" + out.join(",");
+      `)).replace(/^P:/, '').split(',').filter(Boolean).map(Number);
+      const extra = [...new Set(found)].filter((pid) => !after.pages.some((p) => p.id === pid));
+      if (extra.length) {
+        const more = await readInventory(extra);
+        await renderPages(more.pages, before.resolution, afterDir);
+        after.pages.push(...more.pages);
+        fs.writeFileSync(path.join(afterDir, 'inventory.json'), JSON.stringify(after));
+        diff = diffInventories(before, after);
+      }
+    }
+    const isMove = (c) => c.kind === 'modified' && c.props.some((p) => p.prop === 'page');
+    const imageCache = new Map();
+    const pageImage = (dir, pid) => {
+      const f = path.join(dir, `page-${pid}.png`);
+      if (!fs.existsSync(f)) return null;
+      if (!imageCache.has(f)) imageCache.set(f, decodePng(fs.readFileSync(f)));
+      return imageCache.get(f);
+    };
     const pageKeys = [...new Set([...before.pages.map((p) => p.id), ...after.pages.map((p) => p.id)])];
     const visualZones = [];
     let nextZone = diff.changes.length + 1;
@@ -676,8 +772,8 @@ export function createReviewTools(server) {
     for (const pid of pageKeys) {
       const pb = before.pages.find((p) => p.id === pid) || null;
       const pa = after.pages.find((p) => p.id === pid) || null;
-      let imgB = pb ? decodePng(fs.readFileSync(path.join(beforeDir, `page-${pid}.png`))) : null;
-      let imgA = pa ? decodePng(fs.readFileSync(path.join(afterDir, `page-${pid}.png`))) : null;
+      let imgB = pb ? pageImage(beforeDir, pid) : null;
+      let imgA = pa ? pageImage(afterDir, pid) : null;
       let beforeZones = [], afterZones = [];
       const sameSize = imgB && imgA && imgB.width === imgA.width && imgB.height === imgA.height;
       const regions = imgB && imgA ? pixelDiffRegions(imgB, imgA, { cell: 4, gap: 1, ...sens }) : [];
@@ -687,7 +783,7 @@ export function createReviewTools(server) {
       // must not be attributed to a text change in an object underneath
       const otherRects = [];
       for (const c of diff.changes) {
-        if (isTextOnly(c)) continue;
+        if (isTextOnly(c) && !isMove(c)) continue;
         if (c.before && c.kind !== 'added' && c.before.pageId === pid && imgB) { const r = boundsToRect(c.before.bounds, pb.widthMm, imgB); if (r) otherRects.push(r); }
         if (c.after && c.kind !== 'removed' && c.after.pageId === pid && imgA) { const r = boundsToRect(c.after.bounds, pa.widthMm, imgA); if (r) otherRects.push(r); }
       }
@@ -704,6 +800,12 @@ export function createReviewTools(server) {
         return inside.length ? inside : [r];
       };
       for (const c of diff.changes) {
+        if (isMove(c)) {
+          // shown in the move image; here it only explains its pixels
+          if (c.before.pageId === pid && imgB) { const r = boundsToRect(c.before.bounds, pb.widthMm, imgB); if (r) explained.push(r); }
+          if (c.after.pageId === pid && imgA) { const r = boundsToRect(c.after.bounds, pa.widthMm, imgA); if (r) explained.push(r); }
+          continue;
+        }
         if (c.kind !== 'added' && c.before.pageId === pid && imgB) {
           const r = boundsToRect(c.before.bounds, pb.widthMm, imgB);
           if (r) zonesFor(c, r).forEach((rect, i) => beforeZones.push({ rect, zone: c.zone, kind: c.kind, noLabel: i > 0 }));
@@ -718,12 +820,13 @@ export function createReviewTools(server) {
         for (const r of mergeNear(regions, pad)) {
           if (explained.some((e) => intersects(r, e, pad))) continue;
           const zone = nextZone++;
-          visualZones.push({ zone, pageNumber: pa.name, rect: r });
+          visualZones.push({ zone, pageNumber: pa.name, rect: r, renamedFrom: pb.name !== pa.name ? pb.name : null });
           beforeZones.push({ rect: r, zone, kind: 'visual' });
           afterZones.push({ rect: r, zone, kind: 'visual' });
         }
       }
-      if (!beforeZones.length && !afterZones.length && pb && pa) continue;
+      // No zone: nothing to show (an empty added or removed page is in the page map)
+      if (!beforeZones.length && !afterZones.length) continue;
       // Crop both sides to the same changed area (same page size only)
       let cropped = false;
       if (args.crop !== false && imgB && imgA && imgB.width === imgA.width && imgB.height === imgA.height) {
@@ -736,41 +839,83 @@ export function createReviewTools(server) {
         }
       }
       const page = pa || pb;
-      const composite = buildPageComposite({ before: imgB, after: imgA, beforeZones, afterZones, pageNumber: page.name, L, cropped });
+      const composite = buildPageComposite({ before: imgB, after: imgA, beforeZones, afterZones, pageNumber: page.name, beforeName: pb ? pb.name : page.name, afterName: pa ? pa.name : page.name, L, cropped });
       const file = path.join(afterDir, `review-page-${String(page.index + 1).padStart(3, '0')}.png`);
       const png = encodePng(composite);
       fs.writeFileSync(file, png);
-      pagesOut.push({ index: page.index, name: page.name, file, png, zones: new Set([...beforeZones, ...afterZones].map((z) => z.zone)).size });
+      pagesOut.push({ index: page.index, name: page.name, file, png, caption: `${L.page} ${page.name} – ${new Set([...beforeZones, ...afterZones].map((z) => z.zone)).size} zone(s)` });
     }
     pagesOut.sort((x, y) => x.index - y.index);
+
+    // Objects that changed page: one image per (source page, destination page)
+    const movesOut = [];
+    const groups = new Map();
+    for (const c of diff.changes.filter(isMove)) {
+      const k = `${c.before.pageId}>${c.after.pageId}`;
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(c);
+    }
+    for (const list of groups.values()) {
+      const c0 = list[0];
+      const pb = before.pages.find((p) => p.id === c0.before.pageId), pa = after.pages.find((p) => p.id === c0.after.pageId);
+      const src = pb && pageImage(beforeDir, pb.id), dst = pa && pageImage(afterDir, pa.id);
+      if (!src || !dst) continue;
+      const links = list.map((c) => ({ zone: c.zone, from: boundsToRect(c.before.bounds, pb.widthMm, src), to: boundsToRect(c.after.bounds, pa.widthMm, dst) })).filter((l) => l.from && l.to);
+      if (!links.length) continue;
+      const png = encodePng(buildMoveComposite({ src: { img: src, name: pb.name }, dst: { img: dst, name: pa.name }, links, L }));
+      const file = path.join(afterDir, `review-move-${String(pb.index + 1).padStart(3, '0')}-to-${String(pa.index + 1).padStart(3, '0')}.png`);
+      fs.writeFileSync(file, png);
+      movesOut.push({ file, png, caption: `${L.page} ${pb.name} → ${L.page} ${pa.name} – ${links.length} ${fr ? 'objet(s) déplacé(s)' : 'object(s) moved'}` });
+    }
+
+    // Pages added, removed or reordered: page map with thumbnails (current pages rendered small)
+    const mapOut = [];
+    const pageRows = diff.docChanges.filter((d) => d.scope === 'page');
+    if (pageRows.length && after.document.allPages) {
+      const thumbDir = path.join(afterDir, 'thumbs');
+      fs.mkdirSync(thumbDir, { recursive: true });
+      const curPages = after.document.allPages.map((p, i) => ({ ...p, index: i }));
+      await renderPages(curPages, 24, thumbDir);
+      const thumb = (img) => (img ? scaleImage(img, Math.max(8, Math.round((img.width * 64) / img.height)), 64) : null);
+      const afterList = curPages.map((p) => ({ id: p.id, name: p.name, thumb: thumb(pageImage(thumbDir, p.id)) }));
+      const byId = new Map(afterList.map((p) => [p.id, p.thumb]));
+      const beforeList = (before.document.allPages || before.document.allPageIds.map((pid) => ({ id: pid, name: '?' })))
+        .map((p) => ({ id: p.id, name: p.name, thumb: byId.get(p.id) || thumb(pageImage(beforeDir, p.id)) }));
+      const st = pageStructureDiff(before.document.allPageIds, after.document.allPageIds);
+      const png = encodePng(buildPageMap({ before: beforeList, after: afterList, st, L }));
+      const file = path.join(afterDir, 'review-pages.png');
+      fs.writeFileSync(file, png);
+      mapOut.push({ file, png, caption: fr ? `Plan des pages – ${st.moved.length} déplacée(s), ${st.added.length} ajoutée(s), ${st.removed.length} supprimée(s)` : `Page map – ${st.moved.length} moved, ${st.added.length} added, ${st.removed.length} removed` });
+    }
+    const imagesOut = [...mapOut, ...movesOut, ...pagesOut];
 
     const allRows = changeRows(diff, visualZones, L);
     const rows = groupRows(allRows);
     const table = rows.length ? changesTable(rows, L) : '';
-    const counts = { modified: 0, added: 0, removed: 0 };
-    diff.changes.forEach((c) => counts[c.kind]++);
-    const pagesList = pagesOut.map((p) => p.name).join(', ') || '—';
+    const counts = { modified: 0, added: 0, removed: 0, moved: 0 };
+    diff.changes.forEach((c) => counts[isMove(c) ? 'moved' : c.kind]++);
+    const pagesList = [...new Set([...pagesOut.map((p) => p.name), ...diff.changes.filter(isMove).map((c) => c.after.pageName)])].sort((x, y) => (parseInt(x, 10) || 0) - (parseInt(y, 10) || 0)).join(', ') || '—';
     const summary = !allRows.length
       ? (fr ? 'Aucune différence détectée.' : 'No difference found.')
       : fr
-        ? `${counts.modified} modifié(s), ${counts.added} ajouté(s), ${counts.removed} supprimé(s)${visualZones.length ? `, ${visualZones.length} zone(s) visuelle(s)` : ''}${diff.docChanges.length ? `, ${diff.docChanges.length} au niveau document` : ''} – pages ${pagesList}.`
-        : `${counts.modified} modified, ${counts.added} added, ${counts.removed} removed${visualZones.length ? `, ${visualZones.length} visual area(s)` : ''}${diff.docChanges.length ? `, ${diff.docChanges.length} document-level` : ''} – pages ${pagesList}.`;
+        ? `${counts.modified} modifié(s), ${counts.added} ajouté(s), ${counts.removed} supprimé(s)${counts.moved ? `, ${counts.moved} déplacé(s) vers une autre page` : ''}${visualZones.length ? `, ${visualZones.length} zone(s) visuelle(s)` : ''}${diff.docChanges.length ? `, ${diff.docChanges.length} au niveau document` : ''} – pages ${pagesList}.`
+        : `${counts.modified} modified, ${counts.added} added, ${counts.removed} removed${counts.moved ? `, ${counts.moved} moved to another page` : ''}${visualZones.length ? `, ${visualZones.length} visual area(s)` : ''}${diff.docChanges.length ? `, ${diff.docChanges.length} document-level` : ''} – pages ${pagesList}.`;
 
     const title = fr ? `Revue des modifications – ${after.document.name}` : `Change review – ${after.document.name}`;
     const htmlFile = path.join(afterDir, 'report.html');
-    fs.writeFileSync(htmlFile, reportHtml({ title, summary, pages: pagesOut, rows: allRows, L }));
+    fs.writeFileSync(htmlFile, reportHtml({ title, summary, pages: imagesOut, rows: allRows, L }));
 
     const text = [summary];
-    if (pagesOut.length) text.push(fr ? 'Images : AVANT à gauche, APRÈS à droite ; orange = modifié, vert = ajouté, rouge = supprimé ; numéros = colonne #.' : 'Images: BEFORE left, AFTER right; orange = modified, green = added, red = removed; numbers = # column.');
+    if (imagesOut.length) text.push(fr ? 'Images : AVANT à gauche, APRÈS à droite ; orange = modifié ou déplacé, vert = ajouté, rouge = supprimé ; numéros = colonne #.' : 'Images: BEFORE left, AFTER right; orange = modified or moved, green = added, red = removed; numbers = # column.');
     if (table) text.push('', table);
     if (allRows.length) {
       text.push('', `Folder: ${afterDir}`);
       text.push(`  report.html (${fr ? 'images + tableau détaillé, une ligne par objet' : 'images + detailed table, one row per object'})`);
-      if (pagesOut.length) text.push(`  ${pagesOut.map((p) => path.basename(p.file)).join(', ')}`);
-      if (pagesOut.length > maxImages) text.push(fr ? `${pagesOut.length - maxImages} image(s) non affichée(s) ici.` : `${pagesOut.length - maxImages} image(s) not shown here.`);
+      if (imagesOut.length) text.push(`  ${imagesOut.map((p) => path.basename(p.file)).join(', ')}`);
+      if (imagesOut.length > maxImages) text.push(fr ? `${imagesOut.length - maxImages} image(s) non affichée(s) ici.` : `${imagesOut.length - maxImages} image(s) not shown here.`);
     }
     const content = [{ type: 'text', text: text.join('\n') }];
-    for (const p of pagesOut.slice(0, maxImages)) content.push({ type: 'image', data: p.png.toString('base64'), mimeType: 'image/png' });
+    for (const p of imagesOut.slice(0, maxImages)) content.push({ type: 'image', data: p.png.toString('base64'), mimeType: 'image/png' });
     return { content };
   };
 
@@ -803,7 +948,7 @@ del { color:var(--red); } ins { color:var(--green); text-decoration:none; font-w
 .k-modified { color:#d98200; } .k-added { color:var(--green); } .k-removed { color:var(--red); } .k-visual { color:var(--muted); }
 </style></head><body><main>
 <h1>${esc(title)}</h1><p class="summary">${esc(summary)}</p>
-${pages.map((p) => `<figure><img alt="${esc(L.page)} ${esc(p.name)}" src="data:image/png;base64,${p.png.toString('base64')}"><figcaption>${esc(L.page)} ${esc(p.name)} – ${p.zones} zone(s)</figcaption></figure>`).join('\n')}
+${pages.map((p) => `<figure><img alt="${esc(p.caption)}" src="data:image/png;base64,${p.png.toString('base64')}"><figcaption>${esc(p.caption)}</figcaption></figure>`).join('\n')}
 ${rows.length ? `<div class="table-wrap"><table><thead><tr>${L.cols.map((c) => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>
 ${rows.map((r) => `<tr><td class="num">${esc(r.zone)}</td><td>${esc(r.page)}</td><td>${esc(r.element)}</td><td>${esc(r.property)}</td><td>${mdInline(r.before)}</td><td>${mdInline(r.after)}</td><td><span class="k k-${kindClass(r.kind)}">${esc(r.kind)}</span></td></tr>`).join('\n')}
 </tbody></table></div>` : ''}

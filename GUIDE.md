@@ -12,6 +12,8 @@ Follow the five steps for every task. The reference sections below answer questi
 - The PM quotes text → `find_text({ text })` gives page, frame id and context for each match; its pages are the scope.
 - Global replace → `find_text` first; the pages it lists are the scope.
 - Style or swatch change → the whole document is the scope (`allPages: true`).
+- Moving, adding or removing pages → `pages: []` when no page content changes; the backup and the page order are enough, and `review_compare` maps the page order of the whole document.
+- Moving an object to another page → both pages are the scope.
 
 **Done when** you hold the page names of the scope, and nothing outside it has been read.
 
@@ -33,6 +35,7 @@ One call makes the backup, the BEFORE snapshot of the scope, and lists every obj
 
 - Address objects by **id** (stable), from the list of step 2.
 - Text: `find_replace_text({ findText, replaceText, frameId })` for a word or a sentence; `edit_text_frame` with `content` only to rewrite a whole story.
+- Pages: `move_page({ page: "10", after: "3" })`, `add_page`, `delete_page`. Objects to another page: `move_to_page({ id, page: "12" })`.
 - Formatting: apply existing paragraph/character styles. Editing a style changes every page that uses it, so it is a whole-document scope (step 1).
 - Text that no longer fits (`overflows=true` / `OVERSET`): enlarge the frame with `set_object_geometry`, or tell the PM. Type size changes only with the PM's agreement.
 
@@ -69,6 +72,9 @@ Show the PM the image(s) and the change table, then report in three short parts:
 ### Review output
 
 - The images label themselves (BEFORE | AFTER, colour legend, zone numbers matching the table's `#`). A text-only edit is framed on the changed lines; the gutter beside each page marks where each zone sits vertically.
+- **Page map** (when pages were added, removed or moved): the page order BEFORE and AFTER side by side, aligned like a diff; added pages green, removed red, moved pages orange with an arrow from the old place to the new one; unchanged runs folded. Page names follow the numbering, so a moved page reads "10 → 4".
+- **Move image** (when objects changed page): source page BEFORE | destination page AFTER, an arrow from each object to where it landed. The destination page is found even outside the scope.
+- After a renumbering, a "Visuel" zone on a page's folio is the page number changing; the table says so.
 - Identical changes on many objects share one table row; `report.html` keeps one row per object and every image.
 - Review files are temporary, in `$TMPDIR/indesign-mcp-review/` (removed after 3 days). Attach `report.html` or the PNGs to the conversation when the PM wants to keep or share the review; the repository and the InDesign folder stay free of them.
 - "Visuel" rows are pixel changes no object explains (style definition, relinked image, master page): name the likely cause in the open points.

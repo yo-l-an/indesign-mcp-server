@@ -1,6 +1,6 @@
 # InDesign MCP Server
 
-A comprehensive **Model Context Protocol (MCP) server** for **Adobe InDesign automation** with **101 tools**. This server enables AI assistants like Claude to directly control Adobe InDesign, automating complex publishing workflows, document creation, and professional layout tasks.
+A comprehensive **Model Context Protocol (MCP) server** for **Adobe InDesign automation** with **103 tools**. This server enables AI assistants like Claude to directly control Adobe InDesign, automating complex publishing workflows, document creation, and professional layout tasks.
 
 ## 🚀 Features
 
@@ -206,7 +206,7 @@ New swatches default to **CMYK** (0-100). `hex` or RGB values are converted to C
 ## 🛠️ Tool reference
 
 <!-- TOOLS:START -->
-_101 tools. Generated from the server's tool schemas by `npm run docs`._
+_103 tools. Generated from the server's tool schemas by `npm run docs`._
 
 ### Workflow, review and backups
 
@@ -222,7 +222,7 @@ ONE CALL BEFORE CHANGING A DOCUMENT. For the pages the task touches: (1) backup 
 
 | Parameter | Type | Description |
 |---|---|---|
-| `pages` | any[] | Pages as the user names them (page name shown in InDesign, e.g. ["12", "13"]); "+N" = N-th page of the file |
+| `pages` | any[] | Pages as the user names them (page name shown in InDesign, e.g. ["12", "13"]); "+N" = N-th page of the file; [] = page order only (moving, adding, removing pages) |
 | `pageIndexes` | number[] | Alternative: 0-based page indexes |
 | `allPages` | boolean | Snapshot every page: only for document-wide changes (styles, swatches, global replace) Default: `false`. |
 | `reason` *(required)* | string | What the task is, for the backup name, e.g. "correction prix p12" |
@@ -239,7 +239,7 @@ Locate text without reading whole stories: returns each match with page name, pa
 | `text` *(required)* | string | Text (or GREP with useGrep) to find |
 | `useGrep` | boolean | text is a GREP expression Default: `false`. |
 | `caseSensitive` | boolean | Case-sensitive search (plain text) Default: `false`. |
-| `pages` | any[] | Pages as the user names them (page name shown in InDesign, e.g. ["12", "13"]); "+N" = N-th page of the file |
+| `pages` | any[] | Pages as the user names them (page name shown in InDesign, e.g. ["12", "13"]); "+N" = N-th page of the file; [] = page order only (moving, adding, removing pages) |
 | `pageIndexes` | number[] | Alternative: 0-based page indexes |
 | `limit` | number | Maximum matches listed (1-100) Default: `20`. |
 
@@ -1525,6 +1525,30 @@ Merge the active document (which needs data field placeholders) with a CSV/TXT d
 | Parameter | Type | Description |
 |---|---|---|
 | `code` *(required)* | string | ExtendScript/JavaScript code to execute in InDesign. WARNING: Can access filesystem, network, and system APIs! |
+
+### Other
+
+#### `move_page`
+
+Move a page within the document, by page name as the user says it ("+N" = N-th page): after or before another page, or to the start / end. Facing-page spreads reflow around it.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `page` *(required)* | string | Page to move (page name, or "+N") |
+| `after` | string | Put it after this page |
+| `before` | string | Put it before this page |
+| `position` | `start` \| `end` | Or: first / last page of the document |
+
+#### `move_to_page`
+
+Move an object (by id) to another page, by page name ("+N" = N-th page). It keeps its position on the page unless x / y (mm) are given.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `id` *(required)* | number | Object id |
+| `page` *(required)* | string | Destination page (page name, or "+N") |
+| `x` | number | New left edge in mm (default: unchanged) |
+| `y` | number | New top edge in mm (default: unchanged) |
 
 <!-- TOOLS:END -->
 
