@@ -124,7 +124,7 @@ test('composite: transparent gap, gutters on opposite sides, page on paper white
   const px = (x, y) => Array.from(out.data.slice((y * out.width + x) * 4, (y * out.width + x) * 4 + 4));
   const header = out.height - 280;
   assert.equal(px(Math.floor(out.width / 2), header + 50)[3], 0, 'gap is transparent');
-  assert.deepEqual(px(20, header + 10), [255, 255, 255, 255], 'page falls back to paper white');
+  assert.deepEqual(px(40, header + 10), [255, 255, 255, 255], 'page falls back to paper white');
   // before: gutter on the left edge, bar at the zone height; after: gutter on the right edge
   assert.deepEqual(px(4, header + 110).slice(0, 3), ORANGE);
   assert.deepEqual(px(4, header + 50), [255, 255, 255, 255]);
