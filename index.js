@@ -207,8 +207,8 @@ CAUTION: Only do this if you understand the risks and have verified the operatio
         // =================== DOCUMENT MANAGEMENT ===================
         {
           name: 'get_document_info',
-          description: 'Get detailed information about the active document: size in mm, pages, facing pages, bleed, slug, margins, colour intent/profiles and swatches',
-          inputSchema: { type: 'object', properties: {} },
+          description: 'Information about the active document: size in mm, pages (with page names), facing pages, bleed, slug, margins, colour intent/profiles, object counts. Swatch values only with includeSwatches (or use list_color_swatches).',
+          inputSchema: { type: 'object', properties: { includeSwatches: { type: 'boolean', description: 'Also list every swatch with its values', default: false } } },
         },
         {
           name: 'create_document',
@@ -1029,7 +1029,7 @@ CAUTION: Only do this if you understand the risks and have verified the operatio
         if (this.extra.handlers[name]) return await this.extra.handlers[name](args || {});
         switch (name) {
           // Document Management
-          case 'get_document_info': return await this.getDocumentInfo();
+          case 'get_document_info': return await this.getDocumentInfo(args);
           case 'create_document': return await this.createDocument(args);
           case 'open_document': return await this.openDocument(args);
           case 'save_document': return await this.saveDocument(args);
@@ -1360,7 +1360,7 @@ CAUTION: Only do this if you understand the risks and have verified the operatio
   }
 
   // =================== DOCUMENT MANAGEMENT ===================
-  async getDocumentInfo() {
+  async getDocumentInfo(args = {}) {
     const script = `
       var doc = __requireDoc();
       var dp = doc.documentPreferences;
@@ -1379,7 +1379,11 @@ CAUTION: Only do this if you understand the risks and have verified the operatio
       info += "Modified: " + doc.modified + "\\n";
       var filePath = "Unsaved";
       if (__hasFile(doc)) filePath = doc.fullName.fsName;
+      else { try { if (doc.converted && doc.filePath) filePath = doc.filePath.fsName + "/" + doc.name + " (converted from an older InDesign version, not saved yet)"; } catch (e) {} }
       info += "File Path: " + filePath + "\\n";
+      var pn = [];
+      for (var q = 0; q < doc.pages.length; q++) pn.push(doc.pages[q].name);
+      info += "Page names: " + (pn.length > 40 ? pn.slice(0, 20).join(", ") + " ... " + pn.slice(-10).join(", ") : pn.join(", ")) + "\\n";
       info += "\\n=== BLEED / SLUG (mm) ===\\n";
       info += "Bleed top/bottom/inside/outside: " + __r(dp.documentBleedTopOffset) + " / " + __r(dp.documentBleedBottomOffset) + " / " + __r(dp.documentBleedInsideOrLeftOffset) + " / " + __r(dp.documentBleedOutsideOrRightOffset) + "\\n";
       info += "Slug top/bottom/inside/outside: " + __r(dp.slugTopOffset) + " / " + __r(dp.slugBottomOffset) + " / " + __r(dp.slugInsideOrLeftOffset) + " / " + __r(dp.slugRightOrOutsideOffset) + "\\n";
@@ -1403,8 +1407,8 @@ CAUTION: Only do this if you understand the risks and have verified the operatio
       info += "Rectangles (incl. image frames): " + totalRects + "\\n";
       info += "Ovals/Polygons: " + totalShapes + "\\n";
       info += "Layers: " + doc.layers.length + "\\n";
-      info += "\\n=== SWATCHES (" + doc.swatches.length + ") ===\\n";
-      for (var s = 0; s < doc.swatches.length; s++) {
+      info += "Swatches: " + doc.swatches.length + "\\n";
+      ${args.includeSwatches ? '' : 'if (false) '}for (var s = 0; s < doc.swatches.length; s++) {
         var sw = doc.swatches[s].getElements()[0];
         var line = "  " + sw.name;
         try {

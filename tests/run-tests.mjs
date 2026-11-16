@@ -326,7 +326,7 @@ async function main() {
     assert(/Slug top\/bottom\/inside\/outside: 5 \/ 5 \/ 5 \/ 5/.test(info), 'slug reported');
     assert(/Top: 10\b/.test(info) && /Left: 10\b/.test(info), 'margins reported');
     assert(/Facing Pages: false/.test(info), 'facing pages off');
-    assert(/Intent: Print/.test(info) && /SWATCHES \(\d+\)/.test(info), 'colour intent and swatches reported');
+    assert(/Intent: Print/.test(info) && /Swatches: \d+/.test(info) && /Page names: 1, 2/.test(info), 'colour intent, swatch count and page names reported');
   });
 
   await test('create_document A5 facing pages x5 (portrait 148 x 210)', async () => {
@@ -387,7 +387,7 @@ async function main() {
     await fails('create_color_swatch', { name: 'Bad', colorValues: [1, 2] }, /colorValues/);
     const conv = await call('convert_rgb_to_cmyk', { rgb: [255, 0, 0] });
     assert(/CMYK 0,\d+(\.\d+)?,\d+(\.\d+)?,0 \(C,M,Y,K/.test(conv) && /Colour-managed/.test(conv), conv);
-    assert(/Orange \[CMYK process: 0,70(\.\d+)?,9\d(\.\d+)?,0\]/.test(await call('get_document_info')), 'Orange stored as a colour-managed CMYK value');
+    assert(/Orange \[CMYK process: 0,70(\.\d+)?,9\d(\.\d+)?,0\]/.test(await call('get_document_info', { includeSwatches: true })), 'Orange stored as a colour-managed CMYK value');
   });
 
 
