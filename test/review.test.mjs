@@ -123,13 +123,14 @@ test('composite: transparent gap, gutters on opposite sides, page on paper white
   const zone = { rect: { x: 50, y: 100, w: 40, h: 20 }, zone: 1, kind: 'modified' };
   const out = buildPageComposite({ before: page, after: page, beforeZones: [zone], afterZones: [zone], pageNumber: '5', L: labelsFor('fr') });
   const px = (x, y) => Array.from(out.data.slice((y * out.width + x) * 4, (y * out.width + x) * 4 + 4));
-  const header = out.height - 280;
-  assert.equal(px(Math.floor(out.width / 2), header + 50)[3], 0, 'gap is transparent');
-  assert.deepEqual(px(40, header + 10), [255, 255, 255, 255], 'page falls back to paper white');
-  // before: gutter on the left edge, bar at the zone height; after: gutter on the right edge
-  assert.deepEqual(px(4, header + 110).slice(0, 3), ORANGE);
-  assert.deepEqual(px(4, header + 50), [255, 255, 255, 255]);
-  assert.deepEqual(px(out.width - 5, header + 110).slice(0, 3), ORANGE);
+  const { beforeX, afterX, top } = out.layout;
+  assert.equal(px(Math.floor((beforeX + 200 + afterX) / 2), top + 50)[3], 0, 'gap is transparent');
+  assert.equal(px(1, 1)[3], 0, 'corner is transparent');
+  assert.deepEqual(px(beforeX + 30, top + 10), [255, 255, 255, 255], 'page falls back to paper white');
+  // before: gutter left of the page, bar at the zone height; after: gutter right of the page
+  assert.deepEqual(px(beforeX - 12, top + 110).slice(0, 3), ORANGE);
+  assert.deepEqual(px(beforeX - 12, top + 50), [255, 255, 255, 255]);
+  assert.deepEqual(px(afterX + 200 + 12, top + 110).slice(0, 3), ORANGE);
 });
 
 test('gutter puts overlapping zones in separate lanes', () => {

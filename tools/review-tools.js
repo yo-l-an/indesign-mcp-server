@@ -25,7 +25,7 @@ export const GUIDE_PATH = path.join(ROOT, 'GUIDE.md');
 export const BACKUP_FOLDER_NAME = 'InDesign Agent Backups';
 const REVIEW_ROOT_NAME = 'indesign-mcp-review';
 const TEXT_PROPS = new Set(['text', 'tableText']);
-const MAP_THUMB_H = 100;   // page map thumbnail height (px)
+const MAP_THUMB_H = 160;   // page map thumbnail height (px; pages are rendered at 36 dpi, ~420 px for A4)
 
 // Part of g inside r (grown by pad, clipped to r), or null
 const clipRect = (g, r, pad = 0) => {
