@@ -19,6 +19,7 @@ import { createExtraTools } from './tools/extra-tools.js';
 import { createVectorTools } from './tools/vector-tools.js';
 import { createGraphicsTools } from './tools/graphics-tools.js';
 import { createResourceTools } from './tools/resource-tools.js';
+import { createReviewTools } from './tools/review-tools.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -39,6 +40,7 @@ export class InDesignMCPServer {
         capabilities: {
           tools: { listChanged: true },
         },
+        instructions: 'InDesign automation. Before the first change to a document in a session, call get_usage_guide once. Per task: prepare_edit({ pages: [<page names the user gave>], reason }) (backup + BEFORE snapshot of those pages + object ids) -> changes by id -> review_compare (show the images and the change table). Go straight to the pages the user names; locate quoted text with find_text instead of reading stories. Never delete backups unless the user explicitly asks.',
       }
     );
 
@@ -51,7 +53,8 @@ export class InDesignMCPServer {
     ];
 
     // Tool modules contribute their own definitions and handlers
-    const modules = [createExtraTools(this), createVectorTools(this), createGraphicsTools(this), createResourceTools(this)];
+    this.workflow = { guideRead: false, prepared: false, reminded: false, backups: new Set(), lastSnapshot: null };
+    const modules = [createReviewTools(this), createExtraTools(this), createVectorTools(this), createGraphicsTools(this), createResourceTools(this)];
     this.extra = {
       definitions: modules.flatMap((m) => m.definitions),
       handlers: Object.assign({}, ...modules.map((m) => m.handlers)),
@@ -1026,7 +1029,35 @@ CAUTION: Only do this if you understand the risks and have verified the operatio
 
       try {
         args = this.validateArguments(name, args, allDefinitions());
-        if (this.extra.handlers[name]) return await this.extra.handlers[name](args || {});
+        if (this.extra.handlers[name]) return this.withWorkflowReminder(name, await this.extra.handlers[name](args || {}));
+        return this.withWorkflowReminder(name, await this.dispatchCoreTool(name, args));
+      } catch (error) {
+        // Keep protocol errors (invalid params, unknown tool) as they are: wrapping them again
+        // turned them into InternalError and doubled the "MCP error -326xx:" prefix
+        if (error instanceof McpError) throw error;
+        throw new McpError(ErrorCode.InternalError, `Error executing tool ${name}: ${error.message}`);
+      }
+    });
+  }
+
+  // Tools that change an existing document. The first one called without prepare_edit gets a
+  // one-line reminder (once per session; INDESIGN_WORKFLOW_REMINDERS=0 turns it off).
+  isModifyingTool(name) {
+    return !/^(get_|list_|measure_|find_text$|find_typography|analyze_|preflight_|render_|view_|zoom_|review_|export_|convert_|navigate_|activate_|open_|create_document$|close_|save_|backup_|restore_|prepare_|package_|execute_)/.test(name);
+  }
+
+  withWorkflowReminder(name, result) {
+    const w = this.workflow;
+    if (w.prepared || w.reminded || process.env.INDESIGN_WORKFLOW_REMINDERS === '0' || !this.isModifyingTool(name) || !result?.content) return result;
+    w.reminded = true;
+    return {
+      ...result,
+      content: [...result.content, { type: 'text', text: 'Workflow: no prepare_edit in this session. For an existing document, call prepare_edit({ pages, reason }) before changing it (backup + before snapshot), then review_compare.' }],
+    };
+  }
+
+  async dispatchCoreTool(name, args) {
+      {
         switch (name) {
           // Document Management
           case 'get_document_info': return await this.getDocumentInfo(args);
@@ -1099,16 +1130,9 @@ CAUTION: Only do this if you understand the risks and have verified the operatio
           case 'data_merge': return await this.dataMerge(args);
 
           default:
-            if (this.extra.handlers[name]) return await this.extra.handlers[name](args || {});
             throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
         }
-      } catch (error) {
-        // Keep protocol errors (invalid params, unknown tool) as they are: wrapping them again
-        // turned them into InternalError and doubled the "MCP error -326xx:" prefix
-        if (error instanceof McpError) throw error;
-        throw new McpError(ErrorCode.InternalError, `Error executing tool ${name}: ${error.message}`);
       }
-    });
   }
 
   // =================== CORE UTILITIES ===================
