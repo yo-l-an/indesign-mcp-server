@@ -682,14 +682,25 @@ export function createReviewTools(server) {
       const sameSize = imgB && imgA && imgB.width === imgA.width && imgB.height === imgA.height;
       const regions = imgB && imgA ? pixelDiffRegions(imgB, imgA, { cell: 4, gap: 1, ...sens }) : [];
       const explained = [];
+      const isTextOnly = (c) => c.kind === 'modified' && c.props.every((p) => TEXT_PROPS.has(p.prop));
+      // Areas of the other changes (moves, fills, added, removed objects) on this page: their pixels
+      // must not be attributed to a text change in an object underneath
+      const otherRects = [];
+      for (const c of diff.changes) {
+        if (isTextOnly(c)) continue;
+        if (c.before && c.kind !== 'added' && c.before.pageId === pid && imgB) { const r = boundsToRect(c.before.bounds, pb.widthMm, imgB); if (r) otherRects.push(r); }
+        if (c.after && c.kind !== 'removed' && c.after.pageId === pid && imgA) { const r = boundsToRect(c.after.bounds, pa.widthMm, imgA); if (r) otherRects.push(r); }
+      }
+      const area = (r) => r.w * r.h;
+      const mostlyIn = (g, o) => { const i = clipRect(g, o); return i && area(i) > 0.5 * area(g); };
       // A text-only change marks the changed lines (pixel areas inside the object), not the whole
       // frame, so a one-word edit shows as a small zone and a short gutter bar
       const zonesFor = (c, r) => {
         explained.push(r);
-        const textOnly = c.kind === 'modified' && c.props.every((p) => TEXT_PROPS.has(p.prop));
-        if (!textOnly || !sameSize) return [r];
+        if (!isTextOnly(c) || !sameSize) return [r];
         const near = Math.max(6, Math.round(imgA.width / 80));
-        const inside = mergeNear(regions.filter((g) => intersects(g, r)).map((g) => clipRect(g, r, 2)).filter(Boolean), near);
+        const own = regions.filter((g) => intersects(g, r) && !otherRects.some((o) => mostlyIn(g, o)));
+        const inside = mergeNear(own.map((g) => clipRect(g, r, 2)).filter(Boolean), near);
         return inside.length ? inside : [r];
       };
       for (const c of diff.changes) {
