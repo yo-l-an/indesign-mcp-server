@@ -1,10 +1,10 @@
 // Images and basic shapes: place_image, rectangles, ellipses.
 //
 // Moved out of index.js: each tool declares its schema, whether it modifies the document
-// (`modifies`) and its handler in this one file. Handlers reach shared helpers (jsStr, jsNum,
-// frameExpr, executeInDesignScript…) through `this`, which inherits from the server.
+// (`modifies`) and its handler in this one file. Handlers reach the tool context (run, respond,
+// jsStr, jsNum, frameExpr…, lib/tool-context.js) through `this`.
 
-export function createShapeTools(server) {
+export function createShapeTools(ctx) {
   const definitions = [
     {
       name: 'place_image',
@@ -70,7 +70,7 @@ export function createShapeTools(server) {
     },
   ];
 
-  const self = Object.assign(Object.create(server), {
+  const self = Object.assign(Object.create(ctx), {
     async placeImage(args) {
       const {
         imagePath, x = 10, y = 10, width, height, pageIndex = 0,
@@ -147,8 +147,8 @@ export function createShapeTools(server) {
         "Image placed: " + imageFile.name + " - " + __describe(rect);
       `;
 
-      const result = await this.executeInDesignScript(script);
-      return this.formatResponse(result, "Place Image");
+      const result = await this.run(script);
+      return this.respond(result, "Place Image");
     },
 
     async createRectangle(args) {
@@ -182,8 +182,8 @@ export function createShapeTools(server) {
         "${label} created: " + __describe(shape);
       `;
 
-      const result = await this.executeInDesignScript(script);
-      return this.formatResponse(result, `Create ${label}`);
+      const result = await this.run(script);
+      return this.respond(result, `Create ${label}`);
     },
   });
 

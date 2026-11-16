@@ -1,10 +1,12 @@
 // Styles and colours: paragraph, character and object styles, swatches, applying colour.
 //
 // Moved out of index.js: each tool declares its schema, whether it modifies the document
-// (`modifies`) and its handler in this one file. Handlers reach shared helpers (jsStr, jsNum,
-// frameExpr, executeInDesignScript…) through `this`, which inherits from the server.
+// (`modifies`) and its handler in this one file. Handlers reach the tool context (run, respond,
+// jsStr, jsNum, frameExpr…, lib/tool-context.js) through `this`.
 
-export function createStyleTools(server) {
+import { has } from '../lib/tool-context.js';
+
+export function createStyleTools(ctx) {
   const definitions = [
     {
       name: 'create_paragraph_style',
@@ -261,13 +263,12 @@ export function createStyleTools(server) {
     },
   ];
 
-  const self = Object.assign(Object.create(server), {
+  const self = Object.assign(Object.create(ctx), {
     // Shared by create_paragraph_style and modify_paragraph_style
     paragraphStyleScript(mode, args) {
       const name = mode === 'create' ? args.name : args.styleName;
       if (!name) throw new Error(mode === 'create' ? 'name is required' : 'styleName is required');
       const a = args;
-      const has = (v) => v !== undefined && v !== null;
       const lines = [];
 
       if (has(a.baseStyle)) lines.push(`pStyle.basedOn = __pstyle(doc, ${this.jsStr(a.baseStyle)});`);
@@ -376,13 +377,13 @@ export function createStyleTools(server) {
     },
 
     async createParagraphStyle(args) {
-      const result = await this.executeInDesignScript(this.paragraphStyleScript('create', args));
-      return this.formatResponse(result, "Create Paragraph Style");
+      const result = await this.run(this.paragraphStyleScript('create', args));
+      return this.respond(result, "Create Paragraph Style");
     },
 
     async modifyParagraphStyle(args) {
-      const result = await this.executeInDesignScript(this.paragraphStyleScript('modify', args));
-      return this.formatResponse(result, "Modify Paragraph Style");
+      const result = await this.run(this.paragraphStyleScript('modify', args));
+      return this.respond(result, "Modify Paragraph Style");
     },
 
     // Shared by create_/modify_ character and object styles. kind: 'character' | 'object'
@@ -390,7 +391,6 @@ export function createStyleTools(server) {
       const name = mode === 'create' ? args.name : args.styleName;
       if (!name) throw new Error(mode === 'create' ? 'name is required' : 'styleName is required');
       const a = args;
-      const has = (v) => v !== undefined && v !== null;
       const coll = kind === 'character' ? 'characterStyles' : 'objectStyles';
       const label = kind === 'character' ? 'Character' : 'Object';
       const finder = kind === 'character' ? '__cstyle' : '__ostyle';
@@ -438,23 +438,23 @@ export function createStyleTools(server) {
     },
 
     async createCharacterStyle(args) {
-      const result = await this.executeInDesignScript(this.simpleStyleScript('character', 'create', args));
-      return this.formatResponse(result, "Create Character Style");
+      const result = await this.run(this.simpleStyleScript('character', 'create', args));
+      return this.respond(result, "Create Character Style");
     },
 
     async modifyCharacterStyle(args) {
-      const result = await this.executeInDesignScript(this.simpleStyleScript('character', 'modify', args));
-      return this.formatResponse(result, "Modify Character Style");
+      const result = await this.run(this.simpleStyleScript('character', 'modify', args));
+      return this.respond(result, "Modify Character Style");
     },
 
     async createObjectStyle(args) {
-      const result = await this.executeInDesignScript(this.simpleStyleScript('object', 'create', args));
-      return this.formatResponse(result, "Create Object Style");
+      const result = await this.run(this.simpleStyleScript('object', 'create', args));
+      return this.respond(result, "Create Object Style");
     },
 
     async modifyObjectStyle(args) {
-      const result = await this.executeInDesignScript(this.simpleStyleScript('object', 'modify', args));
-      return this.formatResponse(result, "Modify Object Style");
+      const result = await this.run(this.simpleStyleScript('object', 'modify', args));
+      return this.respond(result, "Modify Object Style");
     },
 
     async applyObjectStyle(args) {
@@ -486,8 +486,8 @@ export function createStyleTools(server) {
         "Object style " + ${this.jsStr(styleName)} + " applied to " + appliedCount + " object(s)";
       `;
 
-      const result = await this.executeInDesignScript(script);
-      return this.formatResponse(result, "Apply Object Style");
+      const result = await this.run(script);
+      return this.respond(result, "Apply Object Style");
     },
 
     async applyParagraphStyle(args) {
@@ -507,8 +507,8 @@ export function createStyleTools(server) {
         "Paragraph style " + ${this.jsStr(styleName)} + " applied to text frame id=" + frame.id + " " + __overflowNote(frame);
       `;
 
-      const result = await this.executeInDesignScript(script);
-      return this.formatResponse(result, "Apply Paragraph Style");
+      const result = await this.run(script);
+      return this.respond(result, "Apply Paragraph Style");
     },
 
     async listStyles(args) {
@@ -548,8 +548,8 @@ export function createStyleTools(server) {
         }
       `;
 
-      const result = await this.executeInDesignScript(script);
-      return this.formatResponse(result, "List Styles");
+      const result = await this.run(script);
+      return this.respond(result, "List Styles");
     },
 
     async createColorSwatch(args) {
@@ -608,8 +608,8 @@ export function createStyleTools(server) {
         "Swatch " + ${this.jsStr(name)} + (updated ? " updated: " : " created: ") + model + " " + out.join(",") + (${spotColor ? 'true' : 'false'} ? " (spot)" : "") + note;
       `;
 
-      const result = await this.executeInDesignScript(script);
-      return this.formatResponse(result, "Create Color Swatch");
+      const result = await this.run(script);
+      return this.respond(result, "Create Color Swatch");
     },
 
     async applyColor(args) {
@@ -625,8 +625,8 @@ export function createStyleTools(server) {
         "Colour " + ${this.jsStr(swatchName)} + " applied to ${property} of " + __describe(item);
       `;
 
-      const result = await this.executeInDesignScript(script);
-      return this.formatResponse(result, "Apply Color");
+      const result = await this.run(script);
+      return this.respond(result, "Apply Color");
     },
   });
 

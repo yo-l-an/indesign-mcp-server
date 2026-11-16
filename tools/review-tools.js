@@ -19,6 +19,7 @@ import { decodePng, encodePng } from '../lib/png.js';
 import {
   diffInventories, groupRows, pixelDiffRegions, pageStructureDiff, buildPageMap, buildMoveComposite, scaleImage, boundsToRect, intersects, buildPageComposite, changeRows, changesTable, labelsFor, cropRectFor, cropImage,
 } from '../lib/review-diff.js';
+import { has } from '../lib/tool-context.js';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const GUIDE_PATH = path.join(ROOT, 'GUIDE.md');
@@ -53,7 +54,6 @@ const mergeNear = (rects, pad) => {
 const REVIEW_MAX_AGE_MS = 3 * 24 * 3600 * 1000;
 const MAX_PAGES = 200;
 
-const has = (v) => v !== undefined && v !== null;
 const pad2 = (n) => String(n).padStart(2, '0');
 
 export function slugify(text, max = 60) {
@@ -303,10 +303,10 @@ export function pageSummary(page, maxItems = 60) {
   return lines.join('\n');
 }
 
-export function createReviewTools(server) {
-  const run = (script) => server.executeInDesignScript(script);
+export function createReviewTools(ctx) {
+  const { run } = ctx;
   const reviewRoot = () => path.join(os.tmpdir(), REVIEW_ROOT_NAME);
-  server.workflow = server.workflow || { guideRead: false, backups: new Set(), lastSnapshot: null };
+  ctx.workflow = ctx.workflow || { guideRead: false, backups: new Set(), lastSnapshot: null };
 
   const pruneReviews = () => {
     try {
@@ -391,10 +391,10 @@ export function createReviewTools(server) {
   };
 
   const backupDirFor = (doc, override) => {
-    if (override) return server.validateFilePath(override);
-    if (process.env.INDESIGN_BACKUP_DIR) return server.validateFilePath(process.env.INDESIGN_BACKUP_DIR);
+    if (override) return ctx.resolvePath(override);
+    if (process.env.INDESIGN_BACKUP_DIR) return ctx.resolvePath(process.env.INDESIGN_BACKUP_DIR);
     const base = doc.filePath ? path.dirname(doc.filePath) : path.join(os.homedir(), 'Documents');
-    return server.validateFilePath(path.join(base, BACKUP_FOLDER_NAME));
+    return ctx.resolvePath(path.join(base, BACKUP_FOLDER_NAME));
   };
 
   const makeBackup = async (doc, reason, dirOverride) => {
@@ -409,7 +409,7 @@ export function createReviewTools(server) {
       if (!f.exists) throw new Error("The backup copy was not created");
       "ok";
     `);
-    server.workflow.backups.add(doc.filePath || doc.name);
+    ctx.workflow.backups.add(doc.filePath || doc.name);
     return target;
   };
 
@@ -543,7 +543,7 @@ export function createReviewTools(server) {
   const handlers = {};
 
   handlers.get_usage_guide = async () => {
-    server.workflow.guideRead = true;
+    ctx.workflow.guideRead = true;
     return { content: [{ type: 'text', text: readGuide() }] };
   };
 
@@ -591,7 +591,7 @@ export function createReviewTools(server) {
       }
       total + " match(es)" + (total > out.length ? " (first " + out.length + " shown)" : "") + (out.length ? ":\\n" + out.join("\\n") : "");
     `;
-    return server.formatResponse(await run(script), 'Find Text');
+    return ctx.respond(await run(script), 'Find Text');
   };
 
   handlers.prepare_edit = async (args) => {
@@ -615,8 +615,8 @@ export function createReviewTools(server) {
     fs.mkdirSync(dir, { recursive: true });
     await renderPages(inv.pages, resolution, dir);
     fs.writeFileSync(path.join(dir, 'inventory.json'), JSON.stringify({ resolution, pageIds, ...inv }));
-    server.workflow.lastSnapshot = id;
-    server.workflow.prepared = true;
+    ctx.workflow.lastSnapshot = id;
+    ctx.workflow.prepared = true;
     try {
       if (inv.pages.length) await run(`var doc = __requireDoc(); app.activeWindow.activePage = doc.pages[${inv.pages[0].index}]; "ok";`);
     } catch { /* no window (e.g. document opened without one): not needed */ }
@@ -644,7 +644,7 @@ export function createReviewTools(server) {
       pg = doc.pages.itemByID(${page.id});
       "Moved page " + pg.name + ": position " + from + " -> " + (pg.documentOffset + 1) + " of " + doc.pages.length;
     `);
-    return server.formatResponse(out, 'Move Page');
+    return ctx.respond(out, 'Move Page');
   };
 
   handlers.move_to_page = async (args) => {
@@ -660,7 +660,7 @@ export function createReviewTools(server) {
       it.geometricBounds = [y, x, y + h, x + w];
       "Moved " + it.constructor.name + " id=" + it.id + " from page " + from + " to page " + it.parentPage.name + " at x=" + __r(x) + " y=" + __r(y);
     `);
-    return server.formatResponse(out, 'Move To Page');
+    return ctx.respond(out, 'Move To Page');
   };
 
   handlers.backup_document = async (args) => {
@@ -701,9 +701,9 @@ export function createReviewTools(server) {
 
   handlers.restore_backup = async (args) => {
     const doc0 = /[\\/]/.test(args.backupPath) ? null : await activeDoc();
-    const backup = server.validateFilePath(doc0 ? path.join(backupDirFor(doc0), args.backupPath) : args.backupPath);
+    const backup = ctx.resolvePath(doc0 ? path.join(backupDirFor(doc0), args.backupPath) : args.backupPath);
     if (!fs.existsSync(backup) || !/\.indd$/i.test(backup)) throw new Error(`Backup not found or not an .indd file: ${backup}`);
-    const envDir = process.env.INDESIGN_BACKUP_DIR ? server.validateFilePath(process.env.INDESIGN_BACKUP_DIR) : null;
+    const envDir = process.env.INDESIGN_BACKUP_DIR ? ctx.resolvePath(process.env.INDESIGN_BACKUP_DIR) : null;
     if (path.basename(path.dirname(backup)) !== BACKUP_FOLDER_NAME && path.dirname(backup) !== envDir) {
       throw new Error(`Only files inside a "${BACKUP_FOLDER_NAME}" folder can be restored`);
     }
@@ -725,7 +725,7 @@ export function createReviewTools(server) {
   };
 
   handlers.review_compare = async (args) => {
-    const id = args.snapshotId || server.workflow.lastSnapshot;
+    const id = args.snapshotId || ctx.workflow.lastSnapshot;
     if (!id) throw new Error('No snapshot: call prepare_edit before the changes');
     if (!/^[\w.-]+$/.test(id)) throw new Error(`Invalid snapshotId: ${id}`);
     const caseDir = path.join(reviewRoot(), id);

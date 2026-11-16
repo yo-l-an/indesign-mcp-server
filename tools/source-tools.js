@@ -192,8 +192,8 @@ const LOCATE_SCRIPT = (needles) => `
   "LOCATE\\n" + out.join("\\n");
 `;
 
-export function createSourceTools(server) {
-  const run = (script) => server.executeInDesignScript(script);
+export function createSourceTools(ctx) {
+  const { run } = ctx;
 
   // needles: [{ key, grep, after? }] -> Map key -> "p.12 #4512" | "déjà fait ? p.12 #4512" | "introuvable"
   const locate = async (needles) => {

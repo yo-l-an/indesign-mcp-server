@@ -8,6 +8,7 @@
 
 import { jsStr, jsJson, jsNum, jsEnum } from '../lib/script-runtime.js';
 import { deltaE, toHex } from '../lib/color.js';
+import { has } from '../lib/tool-context.js';
 
 const OBJECT_PROPS = {
   id: { type: 'number', description: 'Stable object id (from create_* tools, place_image or list_page_items). Preferred.' },
@@ -33,16 +34,14 @@ const ANCHORS = {
   'bottom-right': 'BOTTOM_RIGHT_ANCHOR',
 };
 
-const has = (v) => v !== undefined && v !== null;
 
-export function createExtraTools(server) {
-  const fmt = (result, operation) => server.formatResponse(result, operation);
-  const run = (script) => server.executeInDesignScript(script);
+export function createExtraTools(ctx) {
+  const { run, respond } = ctx;
   const num = (v, label) => (has(v) ? jsNum(v, label) : 'null');
 
   // JS expression resolving any page item
   const objExpr = (args) => `__resolve(doc, ${num(args.id, 'id')}, ${num(args.pageIndex, 'pageIndex')}, ${num(args.index, 'index')})`;
-  const frameExpr = (args) => server.frameExpr(args);
+  const frameExpr = (args) => ctx.frameExpr(args);
 
   const definitions = [
     // ---------------- objects & layout ----------------
@@ -259,7 +258,7 @@ export function createExtraTools(server) {
         }
         "=== PAGE ITEMS ON PAGE " + (${pageIndex} + 1) + " (" + shown + ") ===\\n" + (out.length ? out.join("\\n") : "(none)");
       `;
-      return fmt(await run(script), 'Page Items');
+      return respond(await run(script), 'Page Items');
     },
 
     async delete_object(args) {
@@ -270,7 +269,7 @@ export function createExtraTools(server) {
         it.remove();
         "Deleted: " + desc;
       `;
-      return fmt(await run(script), 'Delete Object');
+      return respond(await run(script), 'Delete Object');
     },
 
     async rotate_object(args) {
@@ -285,7 +284,7 @@ export function createExtraTools(server) {
           app.transformationMatrices.add({ counterclockwiseRotationAngle: delta }));
         "Rotated by " + __r(delta) + " deg about ${ref}: " + __describe(it);
       `;
-      return fmt(await run(script), 'Rotate Object');
+      return respond(await run(script), 'Rotate Object');
     },
 
     async set_object_geometry(args) {
@@ -312,7 +311,7 @@ export function createExtraTools(server) {
         if (newRot !== 0) it.rotationAngle = newRot;
         "Geometry updated: " + __describe(it) + (newShear !== 0 ? " shear=" + __r(it.shearAngle) : "");
       `;
-      return fmt(await run(script), 'Set Object Geometry');
+      return respond(await run(script), 'Set Object Geometry');
     },
 
     async set_object_opacity(args) {
@@ -329,7 +328,7 @@ export function createExtraTools(server) {
         ${has(blendMode) ? `bs.blendMode = BlendMode.${jsEnum(blendMode, 'blendMode')};` : ''}
         "${target} transparency set: opacity=" + __r(bs.opacity) + " blendMode=" + bs.blendMode + " - " + __describe(it);
       `;
-      return fmt(await run(script), 'Set Object Opacity');
+      return respond(await run(script), 'Set Object Opacity');
     },
 
     async set_object_overprint(args) {
@@ -348,7 +347,7 @@ export function createExtraTools(server) {
         try { ostroke = it.overprintStroke; } catch (e) {}
         "Overprint set: fill=" + ofill + " stroke=" + ostroke + " - " + __describe(it);
       `;
-      return fmt(await run(script), 'Set Object Overprint');
+      return respond(await run(script), 'Set Object Overprint');
     },
 
     async set_text_frame_options(args) {
@@ -391,7 +390,7 @@ export function createExtraTools(server) {
         ${lines.join('\n        ')}
         "Options updated: " + __describe(tf);
       `;
-      return fmt(await run(script), 'Set Text Frame Options');
+      return respond(await run(script), 'Set Text Frame Options');
     },
 
     async group_objects(args) {
@@ -409,7 +408,7 @@ export function createExtraTools(server) {
         var g = doc.groups.add(items);
         "Grouped " + items.length + " objects: " + __describe(g);
       `;
-      return fmt(await run(script), 'Group Objects');
+      return respond(await run(script), 'Group Objects');
     },
 
     async ungroup(args) {
@@ -422,7 +421,7 @@ export function createExtraTools(server) {
         g.ungroup();
         "Ungrouped into " + ids.length + " objects, ids: " + ids.join(", ");
       `;
-      return fmt(await run(script), 'Ungroup');
+      return respond(await run(script), 'Ungroup');
     },
 
     async apply_character_style_to_range(args) {
@@ -453,7 +452,7 @@ export function createExtraTools(server) {
         `}
         "Character style " + ${jsStr(styleName)} + " applied to " + applied + " range(s) in frame id=" + frame.id;
       `;
-      return fmt(await run(script), 'Apply Character Style');
+      return respond(await run(script), 'Apply Character Style');
     },
 
     async clear_overrides(args) {
@@ -473,7 +472,7 @@ export function createExtraTools(server) {
         target.clearOverrides();
         "Overrides cleared in frame id=" + frame.id + ${ranged ? '" (range)"' : '" (whole story)"'};
       `;
-      return fmt(await run(script), 'Clear Overrides');
+      return respond(await run(script), 'Clear Overrides');
     },
 
     async list_open_documents() {
@@ -489,7 +488,7 @@ export function createExtraTools(server) {
         }
         "=== OPEN DOCUMENTS (" + app.documents.length + ") ===\\n" + (out.length ? out.join("\\n") : "(none)");
       `;
-      return fmt(await run(script), 'Open Documents');
+      return respond(await run(script), 'Open Documents');
     },
 
     async activate_document(args) {
@@ -500,20 +499,20 @@ export function createExtraTools(server) {
         app.activeDocument = d;
         "Active document: " + app.activeDocument.name;
       `;
-      return fmt(await run(script), 'Activate Document');
+      return respond(await run(script), 'Activate Document');
     },
 
     async convert_rgb_to_cmyk(args) {
       let rgb = args.rgb;
-      if (has(args.hex)) rgb = server.parseHex(args.hex);
+      if (has(args.hex)) rgb = ctx.parseHex(args.hex);
       if (!Array.isArray(rgb) || rgb.length !== 3 || rgb.some((v) => !Number.isFinite(Number(v)) || v < 0 || v > 255)) {
         throw new Error('Pass rgb as [R,G,B] (0-255) or hex as #RRGGBB');
       }
       rgb = rgb.map(Number);
       const method = args.conversion || 'profile';
       if (method === 'simple') {
-        const cmyk = server.rgbToCmyk(...rgb);
-        return fmt(`RGB ${rgb.join(',')} -> CMYK ${cmyk.join(',')} (C,M,Y,K in %). Simple formula without a colour profile: hues drift (greens toward blue); use conversion "profile" for print work.`, 'RGB to CMYK');
+        const cmyk = ctx.rgbToCmyk(...rgb);
+        return respond(`RGB ${rgb.join(',')} -> CMYK ${cmyk.join(',')} (C,M,Y,K in %). Simple formula without a colour profile: hues drift (greens toward blue); use conversion "profile" for print work.`, 'RGB to CMYK');
       }
       const raw = await run(`
         var doc = __requireDoc();
@@ -530,7 +529,7 @@ export function createExtraTools(server) {
       const back = field('BACK').split(',').map(Number);
       const de = deltaE(rgb, back);
       const verdict = de < 3 ? 'reproduced accurately' : de < 8 ? 'slightly different after conversion' : 'OUTSIDE the print gamut: the nearest printable colour is noticeably different';
-      return fmt(`RGB ${rgb.join(',')} (${toHex(rgb)}) -> CMYK ${cmyk.join(',')} (C,M,Y,K in %)\nColour-managed: ${field('RGBPROFILE')} -> ${field('CMYKPROFILE')} (the profiles of the active document)\nAs printed it looks like ${toHex(back)} (delta E ${de.toFixed(1)}): ${verdict}.`, 'RGB to CMYK');
+      return respond(`RGB ${rgb.join(',')} (${toHex(rgb)}) -> CMYK ${cmyk.join(',')} (C,M,Y,K in %)\nColour-managed: ${field('RGBPROFILE')} -> ${field('CMYKPROFILE')} (the profiles of the active document)\nAs printed it looks like ${toHex(back)} (delta E ${de.toFixed(1)}): ${verdict}.`, 'RGB to CMYK');
     },
   };
 
@@ -548,7 +547,7 @@ export function createExtraTools(server) {
         it.${method}();
         "${label}: " + __describe(it);
       `;
-      return fmt(await run(script), label);
+      return respond(await run(script), label);
     };
   }
 

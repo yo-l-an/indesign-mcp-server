@@ -1,10 +1,10 @@
 // Text: frames, content, find/replace, Markdown, typography clean-up, tables.
 //
 // Moved out of index.js: each tool declares its schema, whether it modifies the document
-// (`modifies`) and its handler in this one file. Handlers reach shared helpers (jsStr, jsNum,
-// frameExpr, executeInDesignScript…) through `this`, which inherits from the server.
+// (`modifies`) and its handler in this one file. Handlers reach the tool context (run, respond,
+// jsStr, jsNum, frameExpr…, lib/tool-context.js) through `this`.
 
-export function createTextTools(server) {
+export function createTextTools(ctx) {
   const definitions = [
     {
       name: 'get_selected_objects',
@@ -250,7 +250,7 @@ export function createTextTools(server) {
     },
   ];
 
-  const self = Object.assign(Object.create(server), {
+  const self = Object.assign(Object.create(ctx), {
     async getSelectedObjects() {
       const script = `
         if (app.documents.length === 0) {
@@ -296,8 +296,8 @@ export function createTextTools(server) {
         }
       `;
 
-      const result = await this.executeInDesignScript(script);
-      return this.formatResponse(result, "Get Selected Objects");
+      const result = await this.run(script);
+      return this.respond(result, "Get Selected Objects");
     },
 
     async getTextContent(args) {
@@ -354,8 +354,8 @@ export function createTextTools(server) {
         result;
       `;
 
-      const result = await this.executeInDesignScript(script);
-      return this.formatResponse(result, "Get Text Content");
+      const result = await this.run(script);
+      return this.respond(result, "Get Text Content");
     },
 
     async listTextFrames(args) {
@@ -384,8 +384,8 @@ export function createTextTools(server) {
         result;
       `;
 
-      const result = await this.executeInDesignScript(script);
-      return this.formatResponse(result, "List Text Frames");
+      const result = await this.run(script);
+      return this.respond(result, "List Text Frames");
     },
 
     async analyzeEmbeddedObjects(args) {
@@ -624,8 +624,8 @@ export function createTextTools(server) {
         }
       `;
 
-      const result = await this.executeInDesignScript(script);
-      return this.formatResponse(result, "Analyze Embedded Objects");
+      const result = await this.run(script);
+      return this.respond(result, "Analyze Embedded Objects");
     },
 
     // Markdown -> { text, paras: [{ start, style }], ranges: [{ start, end, kind }] } (offsets in characters)
@@ -796,8 +796,8 @@ export function createTextTools(server) {
         "Markdown inserted into frame id " + frame.id + ": " + D.paras.length + " paragraphs, " + D.ranges.length + " character runs. " + __overflowNote(frame);
       `;
 
-      const result = await this.executeInDesignScript(script);
-      return this.formatResponse(result, "Insert Markdown Text");
+      const result = await this.run(script);
+      return this.respond(result, "Insert Markdown Text");
     },
 
     async fixTypographyInSelection(args) {
@@ -835,8 +835,8 @@ export function createTextTools(server) {
         changeLog;
       `;
 
-      const result = await this.executeInDesignScript(script);
-      return this.formatResponse(result, "Fix Typography");
+      const result = await this.run(script);
+      return this.respond(result, "Fix Typography");
     },
 
     async findTypographyIssues(args) {
@@ -958,8 +958,8 @@ export function createTextTools(server) {
         }
       `;
 
-      const result = await this.executeInDesignScript(script);
-      return this.formatResponse(result, "Typography Analysis");
+      const result = await this.run(script);
+      return this.respond(result, "Typography Analysis");
     },
 
     async listGrepSearches() {
@@ -1005,8 +1005,8 @@ export function createTextTools(server) {
         }
       `;
 
-      const result = await this.executeInDesignScript(script);
-      return this.formatResponse(result, "GREP Searches");
+      const result = await this.run(script);
+      return this.respond(result, "GREP Searches");
     },
 
     async cleanImportedText(args) {
@@ -1057,8 +1057,8 @@ export function createTextTools(server) {
         changeLog;
       `;
 
-      const result = await this.executeInDesignScript(script);
-      return this.formatResponse(result, "Text Cleaning");
+      const result = await this.run(script);
+      return this.respond(result, "Text Cleaning");
     },
 
     async analyzeTextProblems(args) {
@@ -1170,8 +1170,8 @@ export function createTextTools(server) {
         }
       `;
 
-      const result = await this.executeInDesignScript(script);
-      return this.formatResponse(result, "Text Analysis");
+      const result = await this.run(script);
+      return this.respond(result, "Text Analysis");
     },
 
     async createTextFrame(args) {
@@ -1258,8 +1258,8 @@ export function createTextTools(server) {
           " paragraphs=" + story.paragraphs.length + " " + __overflowNote(frame) + (notes.length ? " (" + notes.join("; ") + ")" : "");
       `;
 
-      const result = await this.executeInDesignScript(script);
-      return this.formatResponse(result, "Create Text Frame");
+      const result = await this.run(script);
+      return this.respond(result, "Create Text Frame");
     },
 
     async editTextFrame(args) {
@@ -1288,8 +1288,8 @@ export function createTextTools(server) {
         "Text frame id=" + frame.id + " updated: paragraphs=" + story.paragraphs.length + " " + __overflowNote(frame);
       `;
 
-      const result = await this.executeInDesignScript(script);
-      return this.formatResponse(result, "Edit Text Frame");
+      const result = await this.run(script);
+      return this.respond(result, "Edit Text Frame");
     },
 
     async findReplaceText(args) {
@@ -1350,8 +1350,8 @@ export function createTextTools(server) {
           (loc.length ? "\\nWhere: " + loc.join("; ") + (order.length > 30 ? "; ..." : "") : "");
       `;
 
-      const result = await this.executeInDesignScript(script);
-      return this.formatResponse(result, "Find/Replace Text");
+      const result = await this.run(script);
+      return this.respond(result, "Find/Replace Text");
     },
 
     async createTable(args) {
@@ -1385,8 +1385,8 @@ export function createTextTools(server) {
           " (header " + table.headerRowCount + ", footer " + table.footerRowCount + "). " + __overflowNote(frame);
       `;
 
-      const result = await this.executeInDesignScript(script);
-      return this.formatResponse(result, "Create Table");
+      const result = await this.run(script);
+      return this.respond(result, "Create Table");
     },
 
     async populateTable(args) {
@@ -1420,8 +1420,8 @@ export function createTextTools(server) {
         "Table populated: " + written + " cell(s) written (table has " + table.rows.length + " rows x " + table.columns.length + " columns)";
       `;
 
-      const result = await this.executeInDesignScript(script);
-      return this.formatResponse(result, "Populate Table");
+      const result = await this.run(script);
+      return this.respond(result, "Populate Table");
     },
   });
 

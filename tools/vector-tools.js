@@ -7,8 +7,8 @@
 
 import { jsStr, jsJson, jsNum, jsEnum } from '../lib/script-runtime.js';
 import { svgPathToSubpaths, fitSubpaths, polygonPoints } from '../lib/svg-path.js';
+import { has } from '../lib/tool-context.js';
 
-const has = (v) => v !== undefined && v !== null;
 
 const OBJECT_PROPS = {
   id: { type: 'number', description: 'Stable object id (returned by every create_* tool, place_image and list_page_items)' },
@@ -38,9 +38,8 @@ const ARROWS = {
 const CORNERS = { none: 'NONE', rounded: 'ROUNDED_CORNER', inverse_rounded: 'INVERSE_ROUNDED_CORNER', inset: 'INSET_CORNER', bevel: 'BEVEL_CORNER', fancy: 'FANCY_CORNER' };
 const CORNER_NAMES = { top_left: 'topLeft', top_right: 'topRight', bottom_left: 'bottomLeft', bottom_right: 'bottomRight' };
 
-export function createVectorTools(server) {
-  const fmt = (result, operation) => server.formatResponse(result, operation);
-  const run = (script) => server.executeInDesignScript(script);
+export function createVectorTools(ctx) {
+  const { run, respond } = ctx;
   const num = (v, label) => (has(v) ? jsNum(v, label) : 'null');
   const objExpr = (args) => `__resolve(doc, ${num(args.id, 'id')}, ${num(args.pageIndex, 'pageIndex')}, ${num(args.index, 'index')})`;
 
@@ -413,7 +412,7 @@ export function createVectorTools(server) {
       }
       "Path created: " + __describePath(item) + "\\n" + __fmtPoints(item.paths[0]);
     `;
-    return fmt(await run(script), 'Create Path');
+    return respond(await run(script), 'Create Path');
   };
 
   handlers.create_path_from_svg = async (args) => {
@@ -455,7 +454,7 @@ export function createVectorTools(server) {
       for (var p = 0; p < item.paths.length; p++) listing.push("path " + p + ":\\n" + __fmtPoints(item.paths[p]));
       "Path created from SVG data: " + __describePath(item) + "\\n" + listing.join("\\n");
     `;
-    return fmt(await run(script), 'Create Path From SVG');
+    return respond(await run(script), 'Create Path From SVG');
   };
 
   handlers.edit_path_points = async (args) => {
@@ -527,7 +526,7 @@ export function createVectorTools(server) {
       ${action === 'read' ? '' : '__writePath(path, pts, closed);'}
       "${action === 'read' ? 'Points' : 'Path edited (' + action + ')'}: " + __describePath(item) + "\\n" + __fmtPoints(path);
     `;
-    return fmt(await run(script), action === 'read' ? 'Read Path Points' : 'Edit Path Points');
+    return respond(await run(script), action === 'read' ? 'Read Path Points' : 'Edit Path Points');
   };
 
   handlers.create_line = async (args) => {
@@ -562,7 +561,7 @@ export function createVectorTools(server) {
       }
       "Line created: " + __describePath(item) + "\\n" + __fmtPoints(item.paths[0]);
     `;
-    return fmt(await run(script), 'Create Line');
+    return respond(await run(script), 'Create Line');
   };
 
   handlers.create_polygon = async (args) => {
@@ -595,7 +594,7 @@ export function createVectorTools(server) {
       }
       "${innerRatio ? 'Star' : 'Polygon'} created: " + __describePath(item);
     `;
-    return fmt(await run(script), innerRatio ? 'Create Star' : 'Create Polygon');
+    return respond(await run(script), innerRatio ? 'Create Star' : 'Create Polygon');
   };
 
   handlers.convert_shape = async (args) => {
@@ -621,7 +620,7 @@ export function createVectorTools(server) {
       item = __findById(doc, item.id) || item;
       "Converted to ${args.to}: was " + before + ", now " + __describePath(item);
     `;
-    return fmt(await run(script), 'Convert Shape');
+    return respond(await run(script), 'Convert Shape');
   };
 
   handlers.set_corner_options = async (args) => {
@@ -652,7 +651,7 @@ export function createVectorTools(server) {
       for (var i = 0; i < names.length; i++) report.push(names[i] + "=" + String(item[names[i] + "CornerOption"]) + "/" + __r(item[names[i] + "CornerRadius"]) + "mm");
       "Corner options set: " + __describe(item) + "\\n" + report.join(" ");
     `;
-    return fmt(await run(script), 'Set Corner Options');
+    return respond(await run(script), 'Set Corner Options');
   };
 
   handlers.pathfinder = async (args) => {
@@ -701,7 +700,7 @@ export function createVectorTools(server) {
       }
       "Pathfinder ${op} done. Result: " + __describePath(result);
     `;
-    return fmt(await run(script), `Pathfinder ${op}`);
+    return respond(await run(script), `Pathfinder ${op}`);
   };
 
   const targets = (args) => {
@@ -742,7 +741,7 @@ export function createVectorTools(server) {
         ${has(args.gradientAngle) ? `item.gradientFillAngle = ${jsNum(args.gradientAngle, 'gradientAngle')};` : ''}
         ${has(args.tint) ? `item.fillTint = ${pct(args.tint, 'tint')};` : ''}
         ${has(args.opacity) ? `item.fillTransparencySettings.blendingSettings.opacity = ${pct(args.opacity, 'opacity')};` : ''}`;
-    return fmt(await run(eachTarget(args, inner)), 'Set Object Fill');
+    return respond(await run(eachTarget(args, inner)), 'Set Object Fill');
   };
 
   handlers.set_object_stroke = async (args) => {
@@ -767,7 +766,7 @@ export function createVectorTools(server) {
         ${has(args.miterLimit) ? `item.miterLimit = ${jsNum(args.miterLimit, 'miterLimit')};` : ''}
         ${has(args.cap) ? `item.endCap = EndCap.${caps[args.cap]};` : ''}
         ${has(args.opacity) ? `item.strokeTransparencySettings.blendingSettings.opacity = ${pct(args.opacity, 'opacity')};` : ''}`;
-    return fmt(await run(eachTarget(args, inner)), 'Set Object Stroke');
+    return respond(await run(eachTarget(args, inner)), 'Set Object Stroke');
   };
 
   handlers.create_gradient_swatch = async (args) => {
@@ -806,7 +805,7 @@ export function createVectorTools(server) {
       }
       "Gradient " + ${jsStr(args.name)} + " created (" + String(g.type).toLowerCase() + ", " + g.gradientStops.length + " stops):\\n" + listing.join("\\n");
     `;
-    return fmt(await run(script), 'Create Gradient Swatch');
+    return respond(await run(script), 'Create Gradient Swatch');
   };
 
   handlers.set_gradient_feather = async (args) => {
@@ -828,7 +827,7 @@ export function createVectorTools(server) {
         "Gradient feather set (" + String(f.type).toLowerCase() + ", angle " + __r(f.angle) + "): " + __describe(item);
       `}
     `;
-    return fmt(await run(script), 'Set Gradient Feather');
+    return respond(await run(script), 'Set Gradient Feather');
   };
 
   handlers.place_image_in_shape = async (args) => {
@@ -849,7 +848,7 @@ export function createVectorTools(server) {
       ${has(args.contentOffsetX) || has(args.contentOffsetY) ? `shape.graphics[0].move(undefined, [${has(args.contentOffsetX) ? jsNum(args.contentOffsetX, 'contentOffsetX') : 0}, ${has(args.contentOffsetY) ? jsNum(args.contentOffsetY, 'contentOffsetY') : 0}]);` : ''}
       "Image placed in shape: " + __describePath(shape);
     `;
-    return fmt(await run(script), 'Place Image In Shape');
+    return respond(await run(script), 'Place Image In Shape');
   };
 
   handlers.duplicate_object = async (args) => {
@@ -870,7 +869,7 @@ export function createVectorTools(server) {
       }
       "Duplicated " + ids.length + " time(s), ids: " + ids.join(", ") + "\\n" + lines.join("\\n");
     `;
-    return fmt(await run(script), 'Duplicate Object');
+    return respond(await run(script), 'Duplicate Object');
   };
 
   const boundsMap = { selection: 'ITEM_BOUNDS', page: 'PAGE_BOUNDS', margins: 'MARGIN_BOUNDS', spread: 'SPREAD_BOUNDS', bleed: 'BLEED_BOUNDS', key_object: 'KEY_OBJECT' };
@@ -909,7 +908,7 @@ export function createVectorTools(server) {
       for (var j = 0; j < items.length; j++) lines.push(__describe(items[j]));
       "Aligned (${args.alignment}, relative to ${rel}):\\n" + lines.join("\\n");
     `;
-    return fmt(await run(script), 'Align Objects');
+    return respond(await run(script), 'Align Objects');
   };
 
   handlers.distribute_objects = async (args) => {
@@ -929,7 +928,7 @@ export function createVectorTools(server) {
       for (var j = 0; j < items.length; j++) lines.push(__describe(items[j]));
       "Distributed (${args.distribution}):\\n" + lines.join("\\n");
     `;
-    return fmt(await run(script), 'Distribute Objects');
+    return respond(await run(script), 'Distribute Objects');
   };
 
   handlers.get_object_info = async (args) => {
@@ -986,7 +985,7 @@ export function createVectorTools(server) {
       } catch (e) {}
       L.join("\\n");
     `;
-    return fmt(await run(script), 'Object Info');
+    return respond(await run(script), 'Object Info');
   };
 
   return { definitions, handlers };

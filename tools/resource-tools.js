@@ -1,12 +1,11 @@
 // Swatches and fonts: update / delete swatches, list swatches with values and usage, list fonts.
 
 import { jsStr, jsJson, jsNum } from '../lib/script-runtime.js';
+import { has } from '../lib/tool-context.js';
 
-const has = (v) => v !== undefined && v !== null;
 
-export function createResourceTools(server) {
-  const fmt = (result, operation) => server.formatResponse(result, operation);
-  const run = (script) => server.executeInDesignScript(script);
+export function createResourceTools(ctx) {
+  const { run, respond } = ctx;
 
   const definitions = [
     {
@@ -73,7 +72,7 @@ export function createResourceTools(server) {
   handlers.update_color_swatch = async (args) => {
     let model = args.colorModel || 'CMYK';
     let values = args.colorValues;
-    if (has(args.hex)) { model = 'RGB'; values = server.parseHex(args.hex); }
+    if (has(args.hex)) { model = 'RGB'; values = ctx.parseHex(args.hex); }
     if (!['CMYK', 'RGB'].includes(model)) throw new Error(`Invalid colorModel: ${model}`);
     if (has(values)) {
       if (!Array.isArray(values) || values.length !== (model === 'CMYK' ? 4 : 3) || values.some((v) => !Number.isFinite(Number(v)))) {
@@ -83,7 +82,7 @@ export function createResourceTools(server) {
     }
     if (has(args.conversion) && !['profile', 'simple'].includes(args.conversion)) throw new Error(`Invalid conversion: ${args.conversion}`);
     if (!has(values) && !has(args.newName) && !has(args.spotColor)) throw new Error('Nothing to change: pass colorValues / hex, newName and/or spotColor');
-    const rgbToCmyk = has(values) && model === 'RGB' ? server.rgbToCmyk(...values) : [0, 0, 0, 0];
+    const rgbToCmyk = has(values) && model === 'RGB' ? ctx.rgbToCmyk(...values) : [0, 0, 0, 0];
 
     const script = `
       var doc = __requireDoc();
@@ -117,7 +116,7 @@ export function createResourceTools(server) {
       "Swatch " + color.name + " updated: " + String(color.space) + " " + (String(color.model) === "SPOT" ? "spot" : "process") + " " + out.join(",") + note +
         ". Used by " + usage.fills + " fill(s), " + usage.strokes + " stroke(s), " + usage.styles + " style(s).";
     `;
-    return fmt(await run(script), 'Update Color Swatch');
+    return respond(await run(script), 'Update Color Swatch');
   };
 
   handlers.delete_color_swatch = async (args) => {
@@ -137,7 +136,7 @@ export function createResourceTools(server) {
       `}
       "Swatch " + ${jsStr(args.name)} + " deleted" + (used > 0 ? " (" + used + " use(s) replaced)" : "") + ".";
     `;
-    return fmt(await run(script), 'Delete Color Swatch');
+    return respond(await run(script), 'Delete Color Swatch');
   };
 
   handlers.list_color_swatches = async (args) => {
@@ -171,7 +170,7 @@ export function createResourceTools(server) {
       }
       out.join("\\n");
     `;
-    return fmt(await run(script), 'List Color Swatches');
+    return respond(await run(script), 'List Color Swatches');
   };
 
   handlers.list_fonts = async (args) => {
@@ -195,7 +194,7 @@ export function createResourceTools(server) {
       out.push("Use fontFamily = the family and fontStyle = one of its styles.");
       out.join("\\n");
     `;
-    return fmt(await run(script), 'List Fonts');
+    return respond(await run(script), 'List Fonts');
   };
 
   return { definitions, handlers };

@@ -5,8 +5,8 @@ import fs from 'fs';
 import path from 'path';
 import { jsStr, jsJson, jsNum } from '../lib/script-runtime.js';
 import { svgPathToSubpaths, fitSubpaths, subpathBounds } from '../lib/svg-path.js';
+import { has } from '../lib/tool-context.js';
 
-const has = (v) => v !== undefined && v !== null;
 const rand = () => Math.random().toString(36).slice(2);
 
 const VECTOR_EXTENSIONS = ['.svg', '.ai', '.eps', '.pdf'];
@@ -99,10 +99,9 @@ export function buildCmykPdf({ width, height, shapes }) {
   return pdf;
 }
 
-export function createGraphicsTools(server) {
-  const fmt = (result, operation) => server.formatResponse(result, operation);
-  const run = (script) => server.executeInDesignScript(script);
-  const frameExpr = (args) => server.frameExpr(args);
+export function createGraphicsTools(ctx) {
+  const { run, respond } = ctx;
+  const frameExpr = (args) => ctx.frameExpr(args);
 
   const FRAME_PROPS = {
     frameId: { type: 'number', description: 'Stable id of the text frame (preferred over frameIndex)' },
@@ -208,7 +207,7 @@ export function createGraphicsTools(server) {
   const renderToPng = async (args) => {
     const dpi = has(args.resolution) ? jsNum(args.resolution, 'resolution') : 72;
     if (dpi < 10 || dpi > 600) throw new Error('resolution must be 10-600 dpi');
-    const file = path.join(server.scriptDir, `preview_${Date.now()}_${rand()}.png`);
+    const file = path.join(ctx.scriptDir, `preview_${Date.now()}_${rand()}.png`);
     const pageIdx = has(args.pageIndex) ? jsNum(args.pageIndex, 'pageIndex') : 0;
     const bleed = args.includeBleed === true;
     const script = `
@@ -292,7 +291,7 @@ export function createGraphicsTools(server) {
     `;
 
     const result = await run(script);
-    const response = server.formatResponse(result, "Document View");
+    const response = ctx.respond(result, "Document View");
     // Also return a picture of the current page, so the assistant can see the layout
     const pageNumber = Number((result.match(/Current Page: (\d+)/) || [])[1] || 1);
     try {
@@ -333,7 +332,7 @@ export function createGraphicsTools(server) {
       out.push("longest line=" + __r(longest) + " mm");
       out.join("\\n");
     `;
-    return fmt(await run(script), 'Measure Text');
+    return respond(await run(script), 'Measure Text');
   };
 
   // ---- place_graphic ----------------------------------------------------------------------
@@ -411,10 +410,10 @@ export function createGraphicsTools(server) {
     return run(script);
   };
 
-  handlers.place_graphic = async (args) => fmt(await placeGraphic(args), 'Place Graphic');
+  handlers.place_graphic = async (args) => respond(await placeGraphic(args), 'Place Graphic');
 
   const tempFile = (subdir, ext) => {
-    const dir = path.join(server.scriptDir, subdir);
+    const dir = path.join(ctx.scriptDir, subdir);
     fs.mkdirSync(dir, { recursive: true });
     return path.join(dir, `${subdir}_${Date.now()}_${rand()}${ext}`);
   };
@@ -430,7 +429,7 @@ export function createGraphicsTools(server) {
     try {
       const result = await placeGraphic(args, file);
       ok = true;
-      return fmt(`${result}\nsource file: ${args.embed === true && !has(args.saveTo) ? '(deleted, graphic is embedded)' : file}\nNote: the graphic is not editable as paths; RGB colours are converted to the document colour space.`, 'Create Graphic From SVG');
+      return respond(`${result}\nsource file: ${args.embed === true && !has(args.saveTo) ? '(deleted, graphic is embedded)' : file}\nNote: the graphic is not editable as paths; RGB colours are converted to the document colour space.`, 'Create Graphic From SVG');
     } finally {
       // an embedded graphic no longer needs its file; a failed placement leaves nothing behind
       if ((args.embed === true && ok && !has(args.saveTo)) || (!ok && !has(args.saveTo))) fs.rmSync(file, { force: true });
@@ -473,7 +472,7 @@ export function createGraphicsTools(server) {
     try {
       const result = await placeGraphic({ ...args, embed, crop: 'media' }, file);
       ok = true;
-      return fmt(`${result}\nsource file: ${embed && !has(args.saveTo) ? '(deleted, graphic is embedded)' : file}`, 'Create CMYK PDF Shape');
+      return respond(`${result}\nsource file: ${embed && !has(args.saveTo) ? '(deleted, graphic is embedded)' : file}`, 'Create CMYK PDF Shape');
     } finally {
       if ((embed && ok && !has(args.saveTo)) || (!ok && !has(args.saveTo))) fs.rmSync(file, { force: true });
     }

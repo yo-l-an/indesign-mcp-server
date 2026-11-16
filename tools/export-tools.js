@@ -1,10 +1,10 @@
 // Output: PDF, images, EPUB, package, preflight.
 //
 // Moved out of index.js: each tool declares its schema, whether it modifies the document
-// (`modifies`) and its handler in this one file. Handlers reach shared helpers (jsStr, jsNum,
-// frameExpr, executeInDesignScript…) through `this`, which inherits from the server.
+// (`modifies`) and its handler in this one file. Handlers reach the tool context (run, respond,
+// jsStr, jsNum, frameExpr…, lib/tool-context.js) through `this`.
 
-export function createExportTools(server) {
+export function createExportTools(ctx) {
   const definitions = [
     {
       name: 'export_pdf',
@@ -93,7 +93,7 @@ export function createExportTools(server) {
     },
   ];
 
-  const self = Object.assign(Object.create(server), {
+  const self = Object.assign(Object.create(ctx), {
     // "1-3,5" / "all" -> array of 1-based page numbers, or null for all pages
     parsePageRange(pageRange) {
       if (pageRange === undefined || pageRange === null || String(pageRange).trim().toLowerCase() === 'all') return null;
@@ -189,8 +189,8 @@ export function createExportTools(server) {
         "PDF exported: " + pdfFile.fsName + " (requested preset " + ${this.jsStr(preset)} + ", effective preset " + (base.name === ${this.jsStr(presetName)} ? base.name : ${this.jsStr(presetName)} + " = " + base.name) + ", pages " + ${this.jsStr(positions === null ? 'all' : String(pageRange).replace(/\s+/g, ''))} + ", bleed " + ${includeBleed ? '"included"' : '"not included"'} + ", slug " + ${includeSlug ? '"included"' : '"not included"'} + ")";
       `;
 
-      const result = await this.executeInDesignScript(script);
-      return this.formatResponse(result, "Export PDF");
+      const result = await this.run(script);
+      return this.respond(result, "Export PDF");
     },
 
     async exportImages(args) {
@@ -238,8 +238,8 @@ export function createExportTools(server) {
         "Exported " + written.length + " page(s) as ${fmt === 'PNG' ? 'PNG' : 'JPEG'} at ${dpi} dpi (pages: " + wanted.join(", ") + "):\\n" + written.join("\\n");
       `;
 
-      const result = await this.executeInDesignScript(script);
-      return this.formatResponse(result, "Export Images");
+      const result = await this.run(script);
+      return this.respond(result, "Export Images");
     },
 
     async exportEPUB(args) {
@@ -261,8 +261,8 @@ export function createExportTools(server) {
         "EPUB exported: " + epubFile.fsName + " (" + prefs.version + ", images: ${imageFormat})";
       `;
 
-      const result = await this.executeInDesignScript(script);
-      return this.formatResponse(result, "Export EPUB");
+      const result = await this.run(script);
+      return this.respond(result, "Export EPUB");
     },
 
     async packageDocument(args) {
@@ -282,8 +282,8 @@ export function createExportTools(server) {
         "Document packaged to: " + packageFolder.fsName + " (" + packageFolder.getFiles().length + " items)";
       `;
 
-      const result = await this.executeInDesignScript(script);
-      return this.formatResponse(result, "Package Document");
+      const result = await this.run(script);
+      return this.respond(result, "Package Document");
     },
 
     async preflightDocument(args) {
@@ -317,8 +317,8 @@ export function createExportTools(server) {
         }
       `;
 
-      const result = await this.executeInDesignScript(script);
-      return this.formatResponse(result, "Preflight Document");
+      const result = await this.run(script);
+      return this.respond(result, "Preflight Document");
     },
   });
 

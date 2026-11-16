@@ -1,12 +1,12 @@
 // Document, pages and layers: open, create, save, close, page structure, layers, navigation, code and data merge.
 //
 // Moved out of index.js: each tool declares its schema, whether it modifies the document
-// (`modifies`) and its handler in this one file. Handlers reach shared helpers (jsStr, jsNum,
-// frameExpr, executeInDesignScript…) through `this`, which inherits from the server.
+// (`modifies`) and its handler in this one file. Handlers reach the tool context (run, respond,
+// jsStr, jsNum, frameExpr…, lib/tool-context.js) through `this`.
 
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 
-export function createDocumentTools(server) {
+export function createDocumentTools(ctx) {
   const definitions = [
     {
       name: 'get_document_info',
@@ -208,7 +208,7 @@ export function createDocumentTools(server) {
     },
   ];
 
-  const self = Object.assign(Object.create(server), {
+  const self = Object.assign(Object.create(ctx), {
     async getDocumentInfo(args = {}) {
       const script = `
         var doc = __requireDoc();
@@ -273,8 +273,8 @@ export function createDocumentTools(server) {
         info;
       `;
 
-      const result = await this.executeInDesignScript(script);
-      return this.formatResponse(result, "Document Info");
+      const result = await this.run(script);
+      return this.respond(result, "Document Info");
     },
 
     async createDocument(args) {
@@ -383,8 +383,8 @@ export function createDocumentTools(server) {
         doc.pages.length + " pages, " + (doc.documentPreferences.facingPages ? "facing pages" : "single pages");
       `;
 
-      const result = await this.executeInDesignScript(script);
-      return this.formatResponse(result, "Create Document");
+      const result = await this.run(script);
+      return this.respond(result, "Create Document");
     },
 
     async openDocument(args) {
@@ -406,8 +406,8 @@ export function createDocumentTools(server) {
         }
       `;
 
-      const result = await this.executeInDesignScript(script);
-      return this.formatResponse(result, "Open Document");
+      const result = await this.run(script);
+      return this.respond(result, "Open Document");
     },
 
     async saveDocument(args) {
@@ -450,8 +450,8 @@ export function createDocumentTools(server) {
         `}
       `;
 
-      const result = await this.executeInDesignScript(script);
-      return this.formatResponse(result, "Save Document");
+      const result = await this.run(script);
+      return this.respond(result, "Save Document");
     },
 
     async closeDocument(args) {
@@ -480,8 +480,8 @@ export function createDocumentTools(server) {
         }
       `;
 
-      const result = await this.executeInDesignScript(script);
-      return this.formatResponse(result, "Close Document");
+      const result = await this.run(script);
+      return this.respond(result, "Close Document");
     },
 
     async addPage(args) {
@@ -516,8 +516,8 @@ export function createDocumentTools(server) {
         }
       `;
 
-      const result = await this.executeInDesignScript(script);
-      return this.formatResponse(result, "Add Page");
+      const result = await this.run(script);
+      return this.respond(result, "Add Page");
     },
 
     async deletePage(args) {
@@ -544,8 +544,8 @@ export function createDocumentTools(server) {
         }
       `;
 
-      const result = await this.executeInDesignScript(script);
-      return this.formatResponse(result, "Delete Page");
+      const result = await this.run(script);
+      return this.respond(result, "Delete Page");
     },
 
     async duplicatePage(args) {
@@ -562,8 +562,8 @@ export function createDocumentTools(server) {
         "Page " + (${idx} + 1) + " duplicated. New page position: " + (copy.documentOffset + 1) + " (" + copy.allPageItems.length + " objects). Total pages: " + doc.pages.length;
       `;
 
-      const result = await this.executeInDesignScript(script);
-      return this.formatResponse(result, "Duplicate Page");
+      const result = await this.run(script);
+      return this.respond(result, "Duplicate Page");
     },
 
     async navigateToPage(args) {
@@ -587,8 +587,8 @@ export function createDocumentTools(server) {
         }
       `;
 
-      const result = await this.executeInDesignScript(script);
-      return this.formatResponse(result, "Navigate to Page");
+      const result = await this.run(script);
+      return this.respond(result, "Navigate to Page");
     },
 
     async executeInDesignCode(args) {
@@ -617,8 +617,8 @@ export function createDocumentTools(server) {
       }
     
       // User has explicitly enabled arbitrary code execution
-      const result = await this.executeInDesignScript(code);
-      return this.formatResponse(result, "Execute Custom Code");
+      const result = await this.run(code);
+      return this.respond(result, "Execute Custom Code");
     },
 
     async createLayer(args) {
@@ -645,8 +645,8 @@ export function createDocumentTools(server) {
         "Layer " + ${this.jsStr(name)} + " created";
       `;
 
-      const result = await this.executeInDesignScript(script);
-      return this.formatResponse(result, "Create Layer");
+      const result = await this.run(script);
+      return this.respond(result, "Create Layer");
     },
 
     async setActiveLayer(args) {
@@ -660,8 +660,8 @@ export function createDocumentTools(server) {
         "Active layer set to: " + ${this.jsStr(layerName)};
       `;
 
-      const result = await this.executeInDesignScript(script);
-      return this.formatResponse(result, "Set Active Layer");
+      const result = await this.run(script);
+      return this.respond(result, "Set Active Layer");
     },
 
     async listLayers() {
@@ -686,8 +686,8 @@ export function createDocumentTools(server) {
         }
       `;
 
-      const result = await this.executeInDesignScript(script);
-      return this.formatResponse(result, "List Layers");
+      const result = await this.run(script);
+      return this.respond(result, "List Layers");
     },
 
     async zoomToPage(args) {
@@ -702,8 +702,8 @@ export function createDocumentTools(server) {
         "Zoom applied: ${zoom}${pageIndex !== undefined ? ` on page ${this.jsNum(pageIndex, 'pageIndex') + 1}` : ''}";
       `;
 
-      const result = await this.executeInDesignScript(script);
-      return this.formatResponse(result, "Zoom to Page");
+      const result = await this.run(script);
+      return this.respond(result, "Zoom to Page");
     },
 
     async dataMerge(args) {
@@ -756,8 +756,8 @@ export function createDocumentTools(server) {
         "Data merge completed (records: ${selection.mode === 'ALL_RECORDS' ? 'all' : range}). Files written:\\n" + written.join("\\n");
       `;
 
-      const result = await this.executeInDesignScript(script);
-      return this.formatResponse(result, "Data Merge");
+      const result = await this.run(script);
+      return this.respond(result, "Data Merge");
     },
   });
 
