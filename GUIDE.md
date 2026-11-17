@@ -51,9 +51,12 @@ review_compare()                   // few changes
 review_compare({ maxImages: 1 })   // many changes: the table carries them
 ```
 
-The images in the tool result reach you only. Send the PM the files listed on the `Images to show the user` line with your client's file-sharing tool (for example `SendUserFile`), and put the change table in your message. Then report in three short parts: **what changed**, **the review**, **open points** (anything not done or not checked).
+The images in the tool result reach you only. Show the PM the files listed on the `Images to show the user` line:
 
-**Done when** the PM has the image files in the conversation and the table, and every table row matches something they asked for. A row they did not ask for is a side effect: fix it, or explain it in the open points. With client feedback: every feedback number is done or listed in the open points.
+1. Copy them into a folder your client displays inline: your session's scratchpad or working folder (Claude Code shows files from the system temp folder as download cards only). The document's folder stays free of them.
+2. Send the copies with your client's file-sharing tool (for example `SendUserFile` with `display: "render"`), and put the change table in your message. Then report in three short parts: **what changed**, **the review**, **open points** (anything not done or not checked).
+
+**Done when** the PM sees the images inline in the conversation and has the table, and every table row matches something they asked for. A row they did not ask for is a side effect: fix it, or explain it in the open points. With client feedback: every feedback number is done or listed in the open points.
 
 ### 5. Close the task
 
