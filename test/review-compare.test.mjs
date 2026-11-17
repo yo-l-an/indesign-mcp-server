@@ -104,3 +104,33 @@ test('identical renders: unchanged pages are not decoded, the result is the same
   assert.equal(quick.summary, plain.summary);
   assert.deepEqual(quick.images.map((i) => [i.file, i.png.length]), plain.images.map((i) => [i.file, i.png.length]));
 });
+
+test('zone labels: a rotated, moved and shadowed object shows an icon and the new value per change', async () => {
+  const { zoneNotes, markZones } = await import('../lib/review-diff.js');
+  const b = { id: 7, type: 'Rectangle', bounds: [100, 50, 140, 90], rotation: 0 };
+  // rotation alone: the bounding box grows around the same centre, no move
+  const rot = { kind: 'modified', before: b, after: { ...b, bounds: [98, 48, 142, 92], rotation: 12 }, props: [{ prop: 'bounds' }, { prop: 'rotation' }] };
+  assert.deepEqual(zoneNotes(rot, 'after'), [{ icon: 'rotate-left', text: '12°' }]);   // + turns left
+  assert.deepEqual(zoneNotes(rot, 'before'), [{ icon: 'rotate-left', text: '0°' }]);
+  const wrap = { ...rot, after: { ...rot.after, rotation: -350 } };   // -350° = +10°, still left
+  assert.equal(zoneNotes(wrap, 'after')[0].icon, 'rotate-left');
+  assert.equal(zoneNotes({ ...rot, after: { ...rot.after, rotation: -8 } }, 'after')[0].icon, 'rotate');
+  // a move and a resize, then an effect
+  const mv = { kind: 'modified', before: b, after: { ...b, bounds: [110, 60, 160, 100] }, props: [{ prop: 'bounds' }] };
+  assert.deepEqual(zoneNotes(mv, 'after'), [{ icon: 'move', text: 'x 60 · y 110' }, { icon: 'resize', text: '40 × 50' }]);
+  const fx = { kind: 'modified', before: b, after: { ...b, effects: ['drop shadow'] }, props: [{ prop: 'effects' }] };
+  assert.deepEqual(zoneNotes(fx, 'after'), [{ icon: 'fx', text: 'drop shadow' }]);
+  assert.deepEqual(zoneNotes({ kind: 'added', after: b, props: [] }, 'after'), []);
+  // the label is drawn wider than a plain number, inside the image
+  const plain = markZones(blank(), [{ rect: { x: 20, y: 60, w: 40, h: 40 }, zone: 1, kind: 'modified' }]);
+  const noted = markZones(blank(), [{ rect: { x: 20, y: 60, w: 40, h: 40 }, zone: 1, kind: 'modified', notes: zoneNotes(rot, 'after').concat(zoneNotes(fx, 'after')) }]);
+  const inked = (img, y0, y1) => { let n = 0; for (let y = y0; y < y1; y++) for (let x = 0; x < img.width; x++) { const i = (y * img.width + x) * 4; if (img.data[i + 2] < 120) n++; } return n; };
+  assert.ok(inked(noted, 30, 60) > inked(plain, 30, 60) * 2, 'icons and values add to the label');
+});
+
+test('the effects of an object are compared and named in the table', async () => {
+  const items = (effects) => [{ id: 10, type: 'Rectangle', bounds: [10, 10, 60, 60], ...(effects ? { effects } : {}) }];
+  const out = await compareSnapshots({ before: inv([page(1, 1, items())]), after: inv([page(1, 1, items(['drop shadow']))]), source: memorySource({ 'before:1': blank(), 'after:1': blank() }), language: 'en' });
+  assert.match(out.table, /Effects/);
+  assert.match(out.table, /drop shadow/);
+});

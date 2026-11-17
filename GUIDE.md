@@ -98,6 +98,7 @@ Send the PM one message: the counts, then the questions by number, each with the
 ### Review output
 
 - The images label themselves (BEFORE | AFTER, colour legend, zone numbers matching the table's `#`). A text-only edit is framed on the changed lines; the gutter beside each page marks where each zone sits vertically.
+- A modified object's zone label carries one icon per kind of change, each with that side's value: ✥ move (`x · y`, mm), ⤢ resize (`w × h`, mm), ↻ / ↺ rotation (angle, arrow in the direction of the turn), **fx** effects (drop shadow, glow, feather, blend mode…), ■ fill, □ stroke, ◐ opacity, **T** text. Point the user at them when you describe the change.
 - **Page map** (when pages were added, removed or moved): the document seen from above as spreads, BEFORE and AFTER side by side; identical spreads share a row and long runs are folded. Added pages green, removed red, moved pages orange with an arrow from the old place to the new one; grey links show pages that only shifted to another spread. Page names follow the numbering, so a moved page reads "10 → 4" in the table.
 - **Move image** (when objects changed page): source page BEFORE | destination page AFTER, an arrow from each object to where it landed. The destination page is found even outside the scope.
 - After a renumbering, a "Visuel" zone on a page's folio is the page number changing; the table says so.

@@ -95,6 +95,19 @@ function inventoryScript(pageIds, knownIds = null, after = '') {
       try { o.stroke = __nm(it.strokeColor); } catch (e) {}
       try { o.strokeWeight = __r1(it.strokeWeight); } catch (e) {}
       try { o.opacity = __r1(it.transparencySettings.blendingSettings.opacity); } catch (e) {}
+      // Effects that are on (Effects panel), and a blend mode other than normal
+      var fx = [];
+      try { if (it.transparencySettings.dropShadowSettings.mode == ShadowMode.DROP) fx.push("drop shadow"); } catch (e) {}
+      try { if (it.transparencySettings.innerShadowSettings.applied) fx.push("inner shadow"); } catch (e) {}
+      try { if (it.transparencySettings.outerGlowSettings.applied) fx.push("outer glow"); } catch (e) {}
+      try { if (it.transparencySettings.innerGlowSettings.applied) fx.push("inner glow"); } catch (e) {}
+      try { if (it.transparencySettings.bevelAndEmbossSettings.applied) fx.push("bevel"); } catch (e) {}
+      try { if (it.transparencySettings.satinSettings.applied) fx.push("satin"); } catch (e) {}
+      try { if (it.transparencySettings.featherSettings.mode != FeatherMode.NONE) fx.push("feather"); } catch (e) {}
+      try { if (it.transparencySettings.directionalFeatherSettings.applied) fx.push("directional feather"); } catch (e) {}
+      try { if (it.transparencySettings.gradientFeatherSettings.applied) fx.push("gradient feather"); } catch (e) {}
+      try { if (it.transparencySettings.blendingSettings.blendMode != BlendMode.NORMAL) fx.push(String(it.transparencySettings.blendingSettings.blendMode).toLowerCase().replace(/_/g, " ")); } catch (e) {}
+      if (fx.length) o.effects = fx;
       try { o.visible = it.visible; } catch (e) {}
       try { o.layer = it.itemLayer.name; } catch (e) {}
       try { o.name = it.name || it.label || ""; } catch (e) { try { o.name = it.label || ""; } catch (e2) {} }
