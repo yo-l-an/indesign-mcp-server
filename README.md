@@ -220,7 +220,7 @@ _107 tools. Generated from the server's tool schemas by `npm run docs`._
 
 #### `get_usage_guide`
 
-Workflow guide: read once per session, before the first change to a document. Five steps (scope, prepare_edit, surgical change, review_compare, close) plus page names, ids, backups, converted documents and errors.
+Workflow guide: read once per session, before the first change to a document. Five steps (scope, prepare_edit, surgical change, review_compare, close) plus page names, ids, backups, saving, converted documents, errors and improvement notes.
 
 _No parameters._
 
