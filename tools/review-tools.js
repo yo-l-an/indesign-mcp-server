@@ -720,8 +720,13 @@ export function createReviewTools(ctx) {
     fs.writeFileSync(path.join(afterDir, 'inventory.json'), JSON.stringify(after));
 
     const decoded = (f) => (fs.existsSync(f) ? decodePng(fs.readFileSync(f)) : null);
+    const pngFile = (side, pid) => path.join(side === 'before' ? beforeDir : afterDir, `page-${pid}.png`);
     const source = {
-      pageImage: (side, pid) => decoded(path.join(side === 'before' ? beforeDir : afterDir, `page-${pid}.png`)),
+      pageImage: (side, pid) => decoded(pngFile(side, pid)),
+      // InDesign writes byte-identical PNGs for an unchanged page
+      samePixels: (pid) => {
+        try { return fs.readFileSync(pngFile('before', pid)).equals(fs.readFileSync(pngFile('after', pid))); } catch { return false; }
+      },
       locatePages: async (ids) => String(await run(`
         var doc = __requireDoc();
         var ids = ${JSON.stringify(ids.map(Number))}, out = [];

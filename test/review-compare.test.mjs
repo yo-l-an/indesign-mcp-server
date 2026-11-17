@@ -85,3 +85,22 @@ test('a page added: page map from thumbnails of the current pages', async () => 
   assert.deepEqual(out.images.map((i) => i.file), ['review-pages.png']);
   assert.match(out.images[0].caption, /1 added/);
 });
+
+test('identical renders: unchanged pages are not decoded, the result is the same', async () => {
+  const items = (t) => [{ id: 10, type: 'TextFrame', bounds: [10, 10, 30, 200], text: t }];
+  const before = inv([page(1, 1, items('Prix : 12 euros')), page(2, 2, items('Titre')), page(3, 3, items('Fin'))]);
+  const after = inv([page(1, 1, items('Prix : 15 euros')), page(2, 2, items('Titre')), page(3, 3, items('Fin'))]);
+  const imgA = blank();
+  fillRect(imgA, 60, 15, 12, 10, [0, 0, 0]);
+  const images = { 'before:1': blank(), 'after:1': imgA, 'before:2': blank(), 'after:2': blank(), 'before:3': blank(), 'after:3': blank() };
+  const plain = await compareSnapshots({ before, after, source: memorySource(images) });
+  const asked = [];
+  const fast = memorySource(images);
+  const pageImage = fast.pageImage;
+  fast.pageImage = (side, id) => { asked.push(`${side}:${id}`); return pageImage(side, id); };
+  fast.samePixels = (id) => id !== 1;
+  const quick = await compareSnapshots({ before, after, source: fast });
+  assert.deepEqual(asked.sort(), ['after:1', 'before:1'], 'only the changed page is decoded');
+  assert.equal(quick.summary, plain.summary);
+  assert.deepEqual(quick.images.map((i) => [i.file, i.png.length]), plain.images.map((i) => [i.file, i.png.length]));
+});

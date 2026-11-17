@@ -108,6 +108,7 @@ On Windows, use a Windows path with escaped backslashes, e.g. `"args": ["C:\\pat
 
 | Variable | Purpose |
 |---|---|
+| `INDESIGN_EXECUTOR` | `osascript` runs every script through a new `osascript` process instead of the long-running worker (macOS; slower, for troubleshooting). |
 | `INDESIGN_DEFAULT_SAVE_DIR` | Folder for a never-saved document saved without `filePath` (default `~/Documents`). |
 | `INDESIGN_ALLOWED_DIRS` | Extra directories tools may read and write, besides your home folder and the shared folder (`/Users/Shared` on macOS, `C:\Users\Public` on Windows). Separate with `:` on macOS, `;` on Windows. |
 | `INDESIGN_APP_NAME` | InDesign version to script, e.g. `Adobe InDesign 2025`. On Windows the year selects the COM ProgID `InDesign.Application.2025`. |
@@ -1682,7 +1683,7 @@ create_path_from_svg({
 
 ## How scripts run
 
-Each tool generates ExtendScript and writes it to a temp `.jsx` file. On macOS it is run with `do script (POSIX file "...") language javascript`; the AppleScript is a fixed three-line wrapper. On Windows a small JScript file run with `cscript` creates the `InDesign.Application` COM object and calls `DoScript(path, ScriptLanguage.JAVASCRIPT)` (see `lib/launcher-windows.js`). Tool arguments never become part of the AppleScript or JScript launcher. Arguments are validated against the tool's schema before use, and embedded in scripts only as JSON string literals (`jsStr`), checked numbers (`jsNum`) or checked identifiers (`jsEnum`). The script's last expression is captured with `eval`, so multi-line final expressions work.
+Each tool generates ExtendScript and writes it to a temp `.jsx` file. On macOS one long-running JXA process (`osascript -l JavaScript`, started on the first call) keeps the connection to InDesign and runs each file with `doScript`: about 15 ms per call instead of about 200 ms for a new `osascript` each time. If that worker cannot start, each call falls back to `do script (POSIX file "...") language javascript` through a fixed three-line AppleScript (`INDESIGN_EXECUTOR=osascript` forces the fallback). On Windows a small JScript file run with `cscript` creates the `InDesign.Application` COM object and calls `DoScript(path, ScriptLanguage.JAVASCRIPT)` (see `lib/launcher-windows.js`). Tool arguments never become part of the AppleScript or JScript launcher. Arguments are validated against the tool's schema before use, and embedded in scripts only as JSON string literals (`jsStr`), checked numbers (`jsNum`) or checked identifiers (`jsEnum`). The script's last expression is captured with `eval`, so multi-line final expressions work.
 
 Execution goes through one module, `lib/executor.js`: it wraps the script, runs one script at a time, and reads a result envelope (`OK` + value, or `ERR` + code + line + message). A script fails only by throwing; the wording of a returned value never turns it into an error. Tests run the same executor with an in-memory adapter. Tool modules reach it only through the tool context (`lib/tool-context.js`), never through the server object. Errors carry InDesign's error number and never depend on its localised message text. Validation errors of the server itself (`No document open`, `Swatch not found: X`, `Paragraph style not found: X`, ...) are English and the same on every system.
 

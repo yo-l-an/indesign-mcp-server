@@ -73,3 +73,69 @@ test('a tool whose script throws fails through tools/call', async () => {
   const call = server.server._requestHandlers.get('tools/call');
   await assert.rejects(call({ method: 'tools/call', params: { name: 'add_page', arguments: {} } }, {}), /No document open/);
 });
+
+// ---- the macOS worker adapter, driven by a fake worker that speaks the same line protocol ----------
+import { jxaWorkerAdapter } from '../lib/executor.js';
+
+// The fake runs a .jsx as plain JS (enough for these scripts) unless its path says otherwise
+const FAKE_WORKER = `
+const fs = require('fs');
+let buf = '';
+process.stdout.write('READY\\n');
+process.stdin.on('data', (d) => {
+  buf += d;
+  let i;
+  while ((i = buf.indexOf('\\n')) >= 0) {
+    const file = buf.slice(0, i); buf = buf.slice(i + 1);
+    const src = fs.readFileSync(file, 'utf8');
+    if (src.includes('HANG')) continue;
+    if (src.includes('CRASH')) process.exit(3);
+    if (src.includes('NOT_RUNNING')) { process.stdout.write('ERR -600 Application is not running.\\n'); continue; }
+    const m = /RESULT:(\\S+)/.exec(src);
+    fs.writeFileSync(m[1], 'OK\\n' + (src.match(/VALUE:(\\S+)/) || [, 'x'])[1]);
+    process.stdout.write('OK\\n');
+  }
+});
+`;
+
+function fakeWorker({ starts = { n: 0 }, ...opts } = {}) {
+  const dir = tmp();
+  const fake = path.join(dir, 'fake-worker.cjs');
+  fs.writeFileSync(fake, FAKE_WORKER);
+  const adapter = jxaWorkerAdapter({ appName: 'Fake InDesign', command: () => { starts.n++; return [process.execPath, [fake]]; }, log: () => {}, ...opts });
+  return { dir, adapter, starts };
+}
+
+// Run a "script" through the adapter the way the executor does: the job carries the result file
+async function launch(adapter, dir, body) {
+  const id = Math.random().toString(36).slice(2);
+  const jsxFile = path.join(dir, `s_${id}.jsx`), resultFile = path.join(dir, `r_${id}.txt`);
+  fs.writeFileSync(jsxFile, `${body} RESULT:${resultFile}`);
+  await adapter.launch({ jsxFile, resultFile, tempDir: dir });
+  return fs.readFileSync(resultFile, 'utf8');
+}
+
+test('worker: one process serves many scripts', async () => {
+  const { dir, adapter, starts } = fakeWorker();
+  for (let i = 0; i < 5; i++) assert.equal(await launch(adapter, dir, `VALUE:v${i}`), `OK\nv${i}`);
+  assert.equal(starts.n, 1, 'started once');
+});
+
+test('worker: InDesign errors keep their meaning, a crash or a hang gets a fresh worker', async () => {
+  const { dir, adapter, starts } = fakeWorker({ timeoutMs: 300 });
+  await assert.rejects(launch(adapter, dir, 'NOT_RUNNING'), /InDesign is not running or not reachable \(AppleScript error -600\)/);
+  await assert.rejects(launch(adapter, dir, 'HANG'), /did not respond in time/);
+  assert.equal(await launch(adapter, dir, 'VALUE:after-hang'), 'OK\nafter-hang');
+  await assert.rejects(launch(adapter, dir, 'CRASH'), /worker stopped/);
+  assert.equal(await launch(adapter, dir, 'VALUE:after-crash'), 'OK\nafter-crash');
+  assert.equal(starts.n, 3);
+});
+
+test('worker: when it cannot start, calls go through the fallback', async () => {
+  const dir = tmp();
+  const used = [];
+  const adapter = jxaWorkerAdapter({ appName: 'X', startMs: 300, log: () => {}, command: () => [process.execPath, ['-e', 'setTimeout(() => {}, 5000)']], fallback: { launch: async (job) => { used.push(job.jsxFile); fs.writeFileSync(job.resultFile, 'OK\nslow'); } } });
+  assert.equal(await launch(adapter, dir, 'VALUE:x'), 'OK\nslow');
+  assert.equal(await launch(adapter, dir, 'VALUE:y'), 'OK\nslow');
+  assert.equal(used.length, 2, 'later calls go straight to the fallback');
+});
