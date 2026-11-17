@@ -25,7 +25,7 @@ export const GUIDE_PATH = path.join(ROOT, 'GUIDE.md');
 export const BACKUP_FOLDER_NAME = 'InDesign Agent Backups';
 const REVIEW_ROOT_NAME = 'indesign-mcp-review';
 const REVIEW_MAX_AGE_MS = 3 * 24 * 3600 * 1000;
-const REVIEW_MAX_CASES = 30;   // snapshots kept at most (a one-page snapshot with its review: ~200 KB)
+export const REVIEW_MAX_CASES = 300;   // snapshots kept at most (a one-page snapshot with its review: ~200 KB, so ~60 MB at worst)
 const MAX_PAGES = 200;
 
 const pad2 = (n) => String(n).padStart(2, '0');

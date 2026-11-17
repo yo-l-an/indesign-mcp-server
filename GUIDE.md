@@ -101,7 +101,7 @@ Send the PM one message: the counts, then the questions by number, each with the
 - **Move image** (when objects changed page): source page BEFORE | destination page AFTER, an arrow from each object to where it landed. The destination page is found even outside the scope.
 - After a renumbering, a "Visuel" zone on a page's folio is the page number changing; the table says so.
 - Identical changes on many objects share one table row; `report.html` keeps one row per object and every image.
-- Review files are temporary, in `$TMPDIR/indesign-mcp-review/` (about 200 KB per page; removed after 3 days, at most 30 snapshots kept). Attach `report.html` or the PNGs to the conversation when the PM wants to keep or share the review; the repository and the InDesign folder stay free of them.
+- Review files are temporary, in `$TMPDIR/indesign-mcp-review/` (about 200 KB per page; removed after 3 days, at most the 300 newest snapshots kept). Attach `report.html` or the PNGs to the conversation when the PM wants to keep or share the review; the repository and the InDesign folder stay free of them.
 - "Visuel" rows are pixel changes no object explains (style definition, relinked image, master page): name the likely cause in the open points.
 
 ### Change table template

@@ -20,6 +20,7 @@ delete process.env.INDESIGN_AUTO_SNAPSHOT;
 
 const { InDesignMCPServer } = await import('../index.js');
 const { createExecutor, memoryAdapter } = await import('../lib/executor.js');
+const { REVIEW_MAX_CASES } = await import('../tools/review-tools.js');
 
 const PAGES = { 101: { id: 101, name: '1', index: 0 }, 102: { id: 102, name: '2', index: 1 } };
 
@@ -102,26 +103,27 @@ test('INDESIGN_AUTO_SNAPSHOT=0 turns it off', async () => {
   }
 });
 
-test('review folders: older than 3 days removed, at most 30 kept, the ones in use stay', async () => {
+test('review folders: older than 3 days removed, at most REVIEW_MAX_CASES kept, the ones in use stay', async () => {
   const root = path.join(TMP, 'indesign-mcp-review');
   fs.rmSync(root, { recursive: true, force: true });
   fs.mkdirSync(root, { recursive: true });
   const old = (Date.now() - 4 * 24 * 3600 * 1000) / 1000;
-  for (let i = 0; i < 40; i++) {
-    const d = path.join(root, `case-${String(i).padStart(2, '0')}`);
+  const total = REVIEW_MAX_CASES + 10;
+  for (let i = 0; i < total; i++) {
+    const d = path.join(root, `case-${String(i).padStart(3, '0')}`);
     fs.mkdirSync(d);
-    const t = Date.now() / 1000 - 3600 + i;   // recent, case-39 the newest
+    const t = Date.now() / 1000 - 3600 + i;   // recent, the last one the newest
     fs.utimesSync(d, t, t);
   }
   fs.mkdirSync(path.join(root, 'stale'));
   fs.utimesSync(path.join(root, 'stale'), old, old);
   const { server } = fakeServer();
-  server.workflow.snapshots.set('Other.indd', 'case-00');   // oldest, but still in use
+  server.workflow.snapshots.set('Other.indd', 'case-000');   // oldest, but still in use
   await call(server, 'set_object_fill', { id: 55, swatch: 'Paper' });
   const left = fs.readdirSync(root);
   assert.ok(!left.includes('stale'));
-  assert.ok(left.includes('case-00'));
-  assert.ok(left.includes('case-39'));
+  assert.ok(left.includes('case-000'));
+  assert.ok(left.includes(`case-${String(total - 1).padStart(3, '0')}`));
   assert.ok(left.includes(server.workflow.lastSnapshot));
-  assert.ok(left.length <= 32, `${left.length} folders kept`);
+  assert.ok(left.length <= REVIEW_MAX_CASES + 2, `${left.length} folders kept`);
 });
