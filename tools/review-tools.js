@@ -481,7 +481,7 @@ export function createReviewTools(ctx) {
     {
       name: 'move_page',
       modifies: true,
-      description: 'Move a page within the document, by page name as the user says it ("+N" = N-th page): after or before another page, or to the start / end. Facing-page spreads reflow around it.',
+      description: 'Move a page within the document, by page name as the user says it ("+N" = N-th page): after or before another page, or to the start / end. A page alone in its spread moves with its spread, so objects bleeding off the page go along; facing-page spreads reflow around it.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -712,17 +712,27 @@ export function createReviewTools(ctx) {
   handlers.move_page = async (args) => {
     const pages = await readPages();
     const [page] = resolvePageRefs([args.page], pages);
+    // where: [location, reference page id or null]
     let where;
-    if (has(args.after)) where = `LocationOptions.AFTER, doc.pages.itemByID(${resolvePageRefs([args.after], pages)[0].id})`;
-    else if (has(args.before)) where = `LocationOptions.BEFORE, doc.pages.itemByID(${resolvePageRefs([args.before], pages)[0].id})`;
-    else if (args.position === 'start') where = 'LocationOptions.AT_BEGINNING';
-    else if (args.position === 'end') where = 'LocationOptions.AT_END';
+    if (has(args.after)) where = ['AFTER', resolvePageRefs([args.after], pages)[0].id];
+    else if (has(args.before)) where = ['BEFORE', resolvePageRefs([args.before], pages)[0].id];
+    else if (args.position === 'start') where = ['AT_BEGINNING', null];
+    else if (args.position === 'end') where = ['AT_END', null];
     else throw new Error('Say where: after, before, or position ("start" / "end")');
+    const [loc, refId] = where;
     const out = await run(`
       var doc = __requireDoc();
       var pg = doc.pages.itemByID(${page.id});
       var from = pg.documentOffset + 1;
-      pg.move(${where});
+      var ref = ${refId === null ? 'null' : `doc.pages.itemByID(${refId})`};
+      var sp = pg.parent;
+      if (sp.pages.length === 1 && (!ref || ref.parent.pages.length === 1)) {
+        // A page alone in its spread moves with its spread: objects whose centre lies on the
+        // pasteboard (bleeding off the page) belong to the spread and would stay behind
+        if (ref) sp.move(LocationOptions.${loc}, ref.parent); else sp.move(LocationOptions.${loc});
+      } else {
+        if (ref) pg.move(LocationOptions.${loc}, ref); else pg.move(LocationOptions.${loc});
+      }
       pg = doc.pages.itemByID(${page.id});
       "Moved page " + pg.name + ": position " + from + " -> " + (pg.documentOffset + 1) + " of " + doc.pages.length;
     `);

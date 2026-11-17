@@ -1588,7 +1588,7 @@ Merge the active document (which needs data field placeholders) with a CSV/TXT d
 
 #### `move_page`
 
-Move a page within the document, by page name as the user says it ("+N" = N-th page): after or before another page, or to the start / end. Facing-page spreads reflow around it.
+Move a page within the document, by page name as the user says it ("+N" = N-th page): after or before another page, or to the start / end. A page alone in its spread moves with its spread, so objects bleeding off the page go along; facing-page spreads reflow around it.
 
 | Parameter | Type | Description |
 |---|---|---|

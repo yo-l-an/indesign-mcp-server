@@ -28,6 +28,7 @@ function fakeServer({ docId = 7, touched = '101' } = {}) {
   const state = { docId, touched, scripts: [] };
   const answer = (script) => {
     state.scripts.push(script);
+    if (script.includes('"PAGES\\n"')) return 'PAGES\n101\t1\t0\n102\t2\t1';
     if (script.includes('TOUCHED')) return `Doc.indd\n\n0\n0\n${state.docId}\nTOUCHED\n${state.touched}`;
     if (script.includes('Document created: ')) return `Document created: Sans titre-1 - A4\nDOCID ${state.docId}`;
     if (script.includes('INVENTORY')) {
@@ -126,4 +127,17 @@ test('review folders: older than 3 days removed, at most REVIEW_MAX_CASES kept, 
   assert.ok(left.includes(`case-${String(total - 1).padStart(3, '0')}`));
   assert.ok(left.includes(server.workflow.lastSnapshot));
   assert.ok(left.length <= REVIEW_MAX_CASES + 2, `${left.length} folders kept`);
+});
+
+test('move_page moves a page that is alone in its spread with its spread (objects bleeding off the page go along)', async () => {
+  const { server, state } = fakeServer();
+  await call(server, 'move_page', { page: '2', position: 'start' });
+  const script = state.scripts.find((s) => s.includes('Moved page'));
+  assert.match(script, /if \(sp\.pages\.length === 1 && \(!ref \|\| ref\.parent\.pages\.length === 1\)\)/);
+  assert.match(script, /sp\.move\(LocationOptions\.AT_BEGINNING\)/);
+  await call(server, 'move_page', { page: '1', after: '2' });
+  const after = state.scripts.filter((s) => s.includes('Moved page')).pop();
+  assert.match(after, /var ref = doc\.pages\.itemByID\(102\)/);
+  assert.match(after, /sp\.move\(LocationOptions\.AFTER, ref\.parent\)/);
+  assert.match(after, /pg\.move\(LocationOptions\.AFTER, ref\)/);   // facing spreads: the page alone
 });
