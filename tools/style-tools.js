@@ -6,6 +6,17 @@
 
 import { has } from '../lib/tool-context.js';
 
+// create_* tools name the style with `name`; modify_* tools take `styleName`, or `name` as the same thing
+function styleNameOf(mode, args) {
+  if (mode === 'create') {
+    if (!args.name) throw new Error('name is required');
+    return args.name;
+  }
+  const name = has(args.styleName) ? args.styleName : args.name;
+  if (!name) throw new Error('styleName (or name) is required: the style to modify');
+  return name;
+}
+
 export function createStyleTools(ctx) {
   const definitions = [
     {
@@ -22,6 +33,7 @@ export function createStyleTools(ctx) {
           fontSize: { type: 'number', description: 'Font size in points' },
           leading: { type: 'number', description: 'Leading in points' },
           tracking: { type: 'number', description: 'Tracking in 1/1000 em' },
+          horizontalScale: { type: 'number', description: 'Horizontal scale in percent (1-1000, 100 = normal): narrows or widens the glyphs' },
           kerning: { type: 'string', enum: ['Metrics', 'Optical'], description: 'Kerning method' },
           spaceBefore: { type: 'number', description: 'Space before in mm' },
           spaceBeforePt: { type: 'number', description: 'Space before in points (alternative to spaceBefore)' },
@@ -69,12 +81,14 @@ export function createStyleTools(ctx) {
         type: 'object',
         properties: {
           styleName: { type: 'string', description: 'Paragraph style name to modify' },
+          name: { type: 'string', description: 'Same as styleName (either one)' },
           baseStyle: { type: 'string', description: 'New base style' },
           fontFamily: { type: 'string', description: 'Font family (error if not installed)' },
           fontStyle: { type: 'string', description: 'Font style: Regular, Medium, Bold, Italic, ...' },
           fontSize: { type: 'number', description: 'Font size in points' },
           leading: { type: 'number', description: 'Leading in points' },
           tracking: { type: 'number', description: 'Tracking in 1/1000 em' },
+          horizontalScale: { type: 'number', description: 'Horizontal scale in percent (1-1000, 100 = normal): narrows or widens the glyphs' },
           kerning: { type: 'string', enum: ['Metrics', 'Optical'], description: 'Kerning method' },
           spaceBefore: { type: 'number', description: 'Space before in mm' },
           spaceBeforePt: { type: 'number', description: 'Space before in points' },
@@ -111,7 +125,6 @@ export function createStyleTools(ctx) {
           hyphenateLastWord: { type: 'boolean', description: 'Hyphenation: hyphenate the last word of a paragraph' },
           textColor: { type: 'string', description: 'Swatch name' },
         },
-        required: ['styleName'],
       },
     },
     {
@@ -127,6 +140,7 @@ export function createStyleTools(ctx) {
           fontSize: { type: 'number', description: 'Font size in points' },
           textColor: { type: 'string', description: 'Text color' },
           tracking: { type: 'number', description: 'Character tracking' },
+          horizontalScale: { type: 'number', description: 'Horizontal scale in percent (1-1000, 100 = normal)' },
           baseStyle: { type: 'string', description: 'Base style to inherit from' },
         },
         required: ['name'],
@@ -140,13 +154,14 @@ export function createStyleTools(ctx) {
         type: 'object',
         properties: {
           styleName: { type: 'string', description: 'Character style name to modify' },
+          name: { type: 'string', description: 'Same as styleName (either one)' },
           fontFamily: { type: 'string', description: 'Font family' },
           fontStyle: { type: 'string', description: 'Font style (Regular, Bold, Italic)' },
           fontSize: { type: 'number', description: 'Font size in points' },
           textColor: { type: 'string', description: 'Text color (swatch name)' },
           tracking: { type: 'number', description: 'Character tracking' },
+          horizontalScale: { type: 'number', description: 'Horizontal scale in percent (1-1000, 100 = normal)' },
         },
-        required: ['styleName'],
       },
     },
     {
@@ -174,12 +189,12 @@ export function createStyleTools(ctx) {
         type: 'object',
         properties: {
           styleName: { type: 'string', description: 'Object style name to modify' },
+          name: { type: 'string', description: 'Same as styleName (either one)' },
           fillColor: { type: 'string', description: 'Fill color (swatch name)' },
           strokeColor: { type: 'string', description: 'Stroke color (swatch name)' },
           strokeWidth: { type: 'number', description: 'Stroke width in points' },
           transparency: { type: 'number', description: 'Transparency percentage (0-100)' },
         },
-        required: ['styleName'],
       },
     },
     {
@@ -266,8 +281,7 @@ export function createStyleTools(ctx) {
   const self = Object.assign(Object.create(ctx), {
     // Shared by create_paragraph_style and modify_paragraph_style
     paragraphStyleScript(mode, args) {
-      const name = mode === 'create' ? args.name : args.styleName;
-      if (!name) throw new Error(mode === 'create' ? 'name is required' : 'styleName is required');
+      const name = styleNameOf(mode, args);
       const a = args;
       const lines = [];
 
@@ -280,6 +294,7 @@ export function createStyleTools(ctx) {
       if (has(a.fontSize)) lines.push(`pStyle.pointSize = ${this.jsNum(a.fontSize, 'fontSize')};`);
       if (has(a.leading)) lines.push(`pStyle.leading = ${this.jsNum(a.leading, 'leading')};`);
       if (has(a.tracking)) lines.push(`pStyle.tracking = ${this.jsNum(a.tracking, 'tracking')};`);
+      if (has(a.horizontalScale)) lines.push(`pStyle.horizontalScale = ${this.jsScale(a.horizontalScale)};`);
       if (has(a.kerning)) {
         if (!['Metrics', 'Optical'].includes(a.kerning)) throw new Error(`Invalid kerning: ${a.kerning} (use Metrics or Optical)`);
         // kerningMethod takes the localised name ("Optique" in French InDesign); the $ID/ key works in every language
@@ -359,7 +374,7 @@ export function createStyleTools(ctx) {
         var fontName = "n/a";
         try { fontName = pStyle.appliedFont.name.replace("\\t", " "); } catch (e) { try { fontName = String(pStyle.appliedFont); } catch (e2) {} }
         "Paragraph style " + ${this.jsStr(name)} + " ${mode === 'create' ? 'created' : 'modified'}. font=" + fontName +
-          " fontStyle=" + pStyle.fontStyle + " size=" + __r(pStyle.pointSize) + "pt leading=" + (pStyle.leading === Leading.AUTO ? "auto" : __r(pStyle.leading) + "pt") +
+          " fontStyle=" + pStyle.fontStyle + " size=" + __r(pStyle.pointSize) + "pt horizontalScale=" + __r(pStyle.horizontalScale) + "% leading=" + (pStyle.leading === Leading.AUTO ? "auto" : __r(pStyle.leading) + "pt") +
           " tracking=" + pStyle.tracking + " spaceBefore=" + __r(pStyle.spaceBefore) + "mm spaceAfter=" + __r(pStyle.spaceAfter) + "mm" +
           " firstLineIndent=" + __r(pStyle.firstLineIndent) + "mm leftIndent=" + __r(pStyle.leftIndent) + "mm hyphenation=" + pStyle.hyphenation +
           " composer=" + (function () {
@@ -388,8 +403,7 @@ export function createStyleTools(ctx) {
 
     // Shared by create_/modify_ character and object styles. kind: 'character' | 'object'
     simpleStyleScript(kind, mode, args) {
-      const name = mode === 'create' ? args.name : args.styleName;
-      if (!name) throw new Error(mode === 'create' ? 'name is required' : 'styleName is required');
+      const name = styleNameOf(mode, args);
       const a = args;
       const coll = kind === 'character' ? 'characterStyles' : 'objectStyles';
       const label = kind === 'character' ? 'Character' : 'Object';
@@ -402,6 +416,7 @@ export function createStyleTools(ctx) {
         else if (has(a.fontStyle)) lines.push(`style.fontStyle = ${this.jsStr(a.fontStyle)};`);
         if (has(a.fontSize)) lines.push(`style.pointSize = ${this.jsNum(a.fontSize, 'fontSize')};`);
         if (has(a.tracking)) lines.push(`style.tracking = ${this.jsNum(a.tracking, 'tracking')};`);
+        if (has(a.horizontalScale)) lines.push(`style.horizontalScale = ${this.jsScale(a.horizontalScale)};`);
         if (has(a.textColor)) lines.push(`style.fillColor = __swatch(doc, ${this.jsStr(a.textColor)});`);
       } else {
         if (has(a.fillColor)) lines.push(`style.fillColor = __swatch(doc, ${this.jsStr(a.fillColor)});`);
@@ -427,13 +442,15 @@ export function createStyleTools(ctx) {
         ` : `
           style = ${finder}(doc, ${this.jsStr(name)});
         `}
+        // a character style leaves unset properties to the text (NothingEnum): report them as such
+        function __set(v, unit) { return (v === NothingEnum.NOTHING || v === null || v === undefined) ? "(not set)" : (typeof v === "number" ? __r(v) : v) + unit; }
         try {
           ${lines.join('\n        ')}
         } catch (e) {
           ${mode === 'create' ? 'style.remove();' : ''}
           throw e;
         }
-        "${label} style " + ${this.jsStr(name)} + " ${mode === 'create' ? 'created' : 'modified'}." ${kind === 'character' ? `+ " fontStyle=" + style.fontStyle + " size=" + __r(style.pointSize) + "pt tracking=" + style.tracking` : `+ " stroke=" + __r(style.strokeWeight) + "pt opacity=" + __r(style.transparencySettings.blendingSettings.opacity) + "%"`};
+        "${label} style " + ${this.jsStr(name)} + " ${mode === 'create' ? 'created' : 'modified'}." ${kind === 'character' ? `+ " fontStyle=" + __set(style.fontStyle, "") + " size=" + __set(style.pointSize, "pt") + " tracking=" + __set(style.tracking, "") + " horizontalScale=" + __set(style.horizontalScale, "%")` : `+ " stroke=" + __r(style.strokeWeight) + "pt opacity=" + __r(style.transparencySettings.blendingSettings.opacity) + "%"`};
       `;
     },
 
@@ -577,6 +594,10 @@ export function createStyleTools(ctx) {
       const script = `
         var doc = __requireDoc();
         var existing = doc.colors.itemByName(${this.jsStr(name)});
+        // InDesign keeps unnamed process inks (Cyan, Magenta, Yellow...) as colours that are not swatches and cannot be changed
+        if (existing.isValid && !doc.swatches.itemByName(${this.jsStr(name)}).isValid) {
+          throw new Error(${this.jsStr(name)} + " is a name InDesign reserves for a built-in colour: pick another name (e.g. " + ${this.jsStr(name)} + " 2, or a descriptive one)");
+        }
         if (doc.swatches.itemByName(${this.jsStr(name)}).isValid && !(${update ? 'true' : 'false'} && existing.isValid)) {
           throw new Error("Swatch already exists: " + ${this.jsStr(name)} + " (pass update: true to change its values, or use update_color_swatch)");
         }
@@ -600,9 +621,15 @@ export function createStyleTools(ctx) {
           color = doc.colors.add();
           color.name = ${this.jsStr(name)};
         }
-        color.model = ${spotColor ? 'ColorModel.SPOT' : 'ColorModel.PROCESS'};
-        color.space = (model === "CMYK") ? ColorSpace.CMYK : ColorSpace.RGB;
-        color.colorValue = values;
+        try {
+          color.model = ${spotColor ? 'ColorModel.SPOT' : 'ColorModel.PROCESS'};
+          color.space = (model === "CMYK") ? ColorSpace.CMYK : ColorSpace.RGB;
+          color.colorValue = values;
+        } catch (e) {
+          if (updated) throw new Error("Swatch " + ${this.jsStr(name)} + " is a built-in swatch and cannot be changed: create a swatch with another name");
+          color.remove();
+          throw e;
+        }
         var out = [];
         for (var i = 0; i < color.colorValue.length; i++) out.push(__r(color.colorValue[i]));
         "Swatch " + ${this.jsStr(name)} + (updated ? " updated: " : " created: ") + model + " " + out.join(",") + (${spotColor ? 'true' : 'false'} ? " (spot)" : "") + note;

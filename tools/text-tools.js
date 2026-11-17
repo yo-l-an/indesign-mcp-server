@@ -4,6 +4,8 @@
 // (`modifies`) and its handler in this one file. Handlers reach the tool context (run, respond,
 // jsStr, jsNum, frameExpr…, lib/tool-context.js) through `this`.
 
+import { has } from '../lib/tool-context.js';
+
 export function createTextTools(ctx) {
   const definitions = [
     {
@@ -169,6 +171,9 @@ export function createTextTools(ctx) {
           fontStyle: { type: 'string', description: 'Font style (Regular, Bold, Italic, ...) used with fontFamily', default: 'Regular' },
           textColor: { type: 'string', description: 'Swatch name (local override)' },
           alignment: { type: 'string', enum: ['LEFT_ALIGN', 'CENTER_ALIGN', 'RIGHT_ALIGN', 'JUSTIFY'], description: 'Paragraph alignment (local override)' },
+          leading: { type: 'number', description: 'Leading in points (local override)' },
+          tracking: { type: 'number', description: 'Tracking in 1/1000 em (local override)' },
+          horizontalScale: { type: 'number', description: 'Horizontal scale in percent, 1-1000 (local override; fits a word to a width without letter-spacing it)' },
           paragraphStyle: { type: 'string', description: 'Paragraph style name to apply (error if missing)' },
           characterStyle: { type: 'string', description: 'Character style name to apply to all text' },
         },
@@ -192,6 +197,9 @@ export function createTextTools(ctx) {
           fontStyle: { type: 'string', description: 'Font style used with fontFamily', default: 'Regular' },
           textColor: { type: 'string', description: 'Swatch name' },
           alignment: { type: 'string', enum: ['LEFT_ALIGN', 'CENTER_ALIGN', 'RIGHT_ALIGN', 'JUSTIFY'] },
+          leading: { type: 'number', description: 'Leading in points' },
+          tracking: { type: 'number', description: 'Tracking in 1/1000 em' },
+          horizontalScale: { type: 'number', description: 'Horizontal scale in percent, 1-1000 (fits a word to a width without letter-spacing it)' },
         },
       },
     },
@@ -1174,6 +1182,19 @@ export function createTextTools(ctx) {
       return this.respond(result, "Text Analysis");
     },
 
+    // Leading, tracking and horizontal scale as local formatting of `range` (create / edit text frame)
+    localTypeLines(a) {
+      const lines = [];
+      if (has(a.leading)) {
+        const l = this.jsNum(a.leading, 'leading');
+        if (l <= 0) throw new Error('leading must be more than 0 pt');
+        lines.push(`range.leading = ${l};`);
+      }
+      if (has(a.tracking)) lines.push(`range.tracking = ${this.jsNum(a.tracking, 'tracking')};`);
+      if (has(a.horizontalScale)) lines.push(`range.horizontalScale = ${this.jsScale(a.horizontalScale)};`);
+      return lines;
+    },
+
     async createTextFrame(args) {
       const {
         content,
@@ -1248,6 +1269,7 @@ export function createTextTools(ctx) {
             }
           ` : ''}
           ${align ? `range.justification = Justification.${this.jsEnum(align, 'alignment')};` : ''}
+          ${this.localTypeLines(args).join('\n          ')}
         } catch (e) {
           frame.remove();
           throw e;
@@ -1284,6 +1306,7 @@ export function createTextTools(ctx) {
         ${fontSize !== undefined ? `range.pointSize = ${this.jsNum(fontSize, 'fontSize')};` : ''}
         ${textColor !== undefined ? `range.fillColor = __swatch(doc, ${this.jsStr(textColor)});` : ''}
         ${alignment !== undefined ? `range.justification = Justification.${this.jsEnum(alignment, 'alignment')};` : ''}
+        ${this.localTypeLines(args).join('\n        ')}
       
         "Text frame id=" + frame.id + " updated: paragraphs=" + story.paragraphs.length + " " + __overflowNote(frame);
       `;

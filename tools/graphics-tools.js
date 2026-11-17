@@ -136,8 +136,14 @@ export function createGraphicsTools(ctx) {
     {
       name: 'measure_text',
       modifies: false,
-      description: 'Measure a text frame without exporting: line count, the text of every line, the width of every line in mm, the frame width and the overflow state.',
-      inputSchema: { type: 'object', properties: { ...FRAME_PROPS } },
+      description: 'Measure a text frame without exporting: line count, the text of every line, the width of every line in mm, the frame width and the overflow state. inkBounds: true also gives the bounds of the visible glyphs (outlines of a temporary copy), and their offsets from the frame, to align a word\'s visible edge or cap height to a position.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          ...FRAME_PROPS,
+          inkBounds: { type: 'boolean', description: 'Also report the bounds of the visible glyphs (x, y, w, h in mm) and their offsets from the frame', default: false },
+        },
+      },
     },
     {
       name: 'place_graphic',
@@ -330,6 +336,27 @@ export function createGraphicsTools(ctx) {
         out.push("[" + i + "] width=" + __r(w) + " mm baseline=" + __r(ln.baseline) + " mm: " + JSON_STR(text));
       }
       out.push("longest line=" + __r(longest) + " mm");
+      ${args.inkBounds ? `
+      // Outline a copy (the frame itself stays text), read the glyph bounds, remove the copy
+      var copy = frame.duplicate();
+      var ink = null;
+      try {
+        var outlines = copy.createOutlines(true);
+        for (var o = 0; o < outlines.length; o++) {
+          var ob = outlines[o].geometricBounds;
+          if (!ink) ink = [ob[0], ob[1], ob[2], ob[3]];
+          else { ink[0] = Math.min(ink[0], ob[0]); ink[1] = Math.min(ink[1], ob[1]); ink[2] = Math.max(ink[2], ob[2]); ink[3] = Math.max(ink[3], ob[3]); }
+          outlines[o].remove();
+        }
+      } catch (e) {
+        try { if (copy.isValid) copy.remove(); } catch (e2) {}
+        if (!ink) throw new Error("Ink bounds unavailable: the frame has no visible text to outline (" + e.message + ")");
+      }
+      try { if (copy.isValid) copy.remove(); } catch (e3) {}
+      if (!ink) throw new Error("Ink bounds unavailable: the frame has no visible text to outline");
+      out.push("ink bounds: x=" + __r(ink[1]) + " y=" + __r(ink[0]) + " w=" + __r(ink[3] - ink[1]) + " h=" + __r(ink[2] - ink[0]) + " mm");
+      out.push("ink offset from the frame: left=" + __r(ink[1] - b[1]) + " top=" + __r(ink[0] - b[0]) + " right=" + __r(b[3] - ink[3]) + " bottom=" + __r(b[2] - ink[2]) + " mm");
+      ` : ''}
       out.join("\\n");
     `;
     return respond(await run(script), 'Measure Text');

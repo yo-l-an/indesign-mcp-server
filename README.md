@@ -1,6 +1,6 @@
 # InDesign MCP Server
 
-A comprehensive **Model Context Protocol (MCP) server** for **Adobe InDesign automation** with **107 tools**. This server enables AI assistants like Claude to directly control Adobe InDesign, automating complex publishing workflows, document creation, and professional layout tasks.
+A comprehensive **Model Context Protocol (MCP) server** for **Adobe InDesign automation** with **108 tools**. This server enables AI assistants like Claude to directly control Adobe InDesign, automating complex publishing workflows, document creation, and professional layout tasks.
 
 ## 🚀 Features
 
@@ -214,7 +214,7 @@ One policy (`lib/policy.js`) checks every file argument before a tool runs: path
 ## 🛠️ Tool reference
 
 <!-- TOOLS:START -->
-_107 tools. Generated from the server's tool schemas by `npm run docs`._
+_108 tools. Generated from the server's tool schemas by `npm run docs`._
 
 ### Workflow, review and backups
 
@@ -406,13 +406,15 @@ Zoom and fit page in view
 
 #### `add_page`
 
-Add a new page to the document
+Add a new page to the document. width / height (mm) give the new page its own size (see set_page_size).
 
 | Parameter | Type | Description |
 |---|---|---|
 | `position` | `before` \| `after` \| `end` |  Default: `"end"`. |
 | `pageIndex` | number | Reference page index (for before/after) |
 | `masterPage` | string | Master page to apply |
+| `width` | number | Width of the new page in mm (default: document size) |
+| `height` | number | Height of the new page in mm (default: document size) |
 
 #### `delete_page`
 
@@ -455,13 +457,14 @@ Render one page (or one object) to PNG and return it directly as an image, so yo
 
 #### `measure_text`
 
-Measure a text frame without exporting: line count, the text of every line, the width of every line in mm, the frame width and the overflow state.
+Measure a text frame without exporting: line count, the text of every line, the width of every line in mm, the frame width and the overflow state. inkBounds: true also gives the bounds of the visible glyphs (outlines of a temporary copy), and their offsets from the frame, to align a word's visible edge or cap height to a position.
 
 | Parameter | Type | Description |
 |---|---|---|
 | `frameId` | number | Stable id of the text frame (preferred over frameIndex) |
 | `frameIndex` | number | Index in page.textFrames (0 = frontmost) |
 | `pageIndex` | number | Page index (0-based), used with frameIndex Default: `0`. |
+| `inkBounds` | boolean | Also report the bounds of the visible glyphs (x, y, w, h in mm) and their offsets from the frame Default: `false`. |
 
 #### `list_page_items`
 
@@ -502,6 +505,9 @@ Create a text frame (mm, origin top-left of the page trim). Only parameters you 
 | `fontStyle` | string | Font style (Regular, Bold, Italic, ...) used with fontFamily Default: `"Regular"`. |
 | `textColor` | string | Swatch name (local override) |
 | `alignment` | `LEFT_ALIGN` \| `CENTER_ALIGN` \| `RIGHT_ALIGN` \| `JUSTIFY` | Paragraph alignment (local override) |
+| `leading` | number | Leading in points (local override) |
+| `tracking` | number | Tracking in 1/1000 em (local override) |
+| `horizontalScale` | number | Horizontal scale in percent, 1-1000 (local override; fits a word to a width without letter-spacing it) |
 | `paragraphStyle` | string | Paragraph style name to apply (error if missing) |
 | `characterStyle` | string | Character style name to apply to all text |
 
@@ -521,6 +527,9 @@ Edit a text frame. Setting content replaces the whole story. Returns whether the
 | `fontStyle` | string | Font style used with fontFamily Default: `"Regular"`. |
 | `textColor` | string | Swatch name |
 | `alignment` | `LEFT_ALIGN` \| `CENTER_ALIGN` \| `RIGHT_ALIGN` \| `JUSTIFY` |  |
+| `leading` | number | Leading in points |
+| `tracking` | number | Tracking in 1/1000 em |
+| `horizontalScale` | number | Horizontal scale in percent, 1-1000 (fits a word to a width without letter-spacing it) |
 
 #### `list_text_frames`
 
@@ -701,6 +710,7 @@ Create a paragraph style. Returns the font that was actually applied.
 | `fontSize` | number | Font size in points |
 | `leading` | number | Leading in points |
 | `tracking` | number | Tracking in 1/1000 em |
+| `horizontalScale` | number | Horizontal scale in percent (1-1000, 100 = normal): narrows or widens the glyphs |
 | `kerning` | `Metrics` \| `Optical` | Kerning method |
 | `spaceBefore` | number | Space before in mm |
 | `spaceBeforePt` | number | Space before in points (alternative to spaceBefore) |
@@ -734,13 +744,15 @@ Modify a paragraph style (same properties as create_paragraph_style). Returns th
 
 | Parameter | Type | Description |
 |---|---|---|
-| `styleName` *(required)* | string | Paragraph style name to modify |
+| `styleName` | string | Paragraph style name to modify |
+| `name` | string | Same as styleName (either one) |
 | `baseStyle` | string | New base style |
 | `fontFamily` | string | Font family (error if not installed) |
 | `fontStyle` | string | Font style: Regular, Medium, Bold, Italic, ... |
 | `fontSize` | number | Font size in points |
 | `leading` | number | Leading in points |
 | `tracking` | number | Tracking in 1/1000 em |
+| `horizontalScale` | number | Horizontal scale in percent (1-1000, 100 = normal): narrows or widens the glyphs |
 | `kerning` | `Metrics` \| `Optical` | Kerning method |
 | `spaceBefore` | number | Space before in mm |
 | `spaceBeforePt` | number | Space before in points |
@@ -793,6 +805,7 @@ Create a new character style
 | `fontSize` | number | Font size in points |
 | `textColor` | string | Text color |
 | `tracking` | number | Character tracking |
+| `horizontalScale` | number | Horizontal scale in percent (1-1000, 100 = normal) |
 | `baseStyle` | string | Base style to inherit from |
 
 #### `modify_character_style`
@@ -801,12 +814,14 @@ Modify properties of an existing character style
 
 | Parameter | Type | Description |
 |---|---|---|
-| `styleName` *(required)* | string | Character style name to modify |
+| `styleName` | string | Character style name to modify |
+| `name` | string | Same as styleName (either one) |
 | `fontFamily` | string | Font family |
 | `fontStyle` | string | Font style (Regular, Bold, Italic) |
 | `fontSize` | number | Font size in points |
 | `textColor` | string | Text color (swatch name) |
 | `tracking` | number | Character tracking |
+| `horizontalScale` | number | Horizontal scale in percent (1-1000, 100 = normal) |
 
 #### `create_object_style`
 
@@ -827,7 +842,8 @@ Modify properties of an existing object style
 
 | Parameter | Type | Description |
 |---|---|---|
-| `styleName` *(required)* | string | Object style name to modify |
+| `styleName` | string | Object style name to modify |
+| `name` | string | Same as styleName (either one) |
 | `fillColor` | string | Fill color (swatch name) |
 | `strokeColor` | string | Stroke color (swatch name) |
 | `strokeWidth` | number | Stroke width in points |
@@ -1266,6 +1282,7 @@ Set text frame options: insets (mm), vertical alignment, columns, auto-size and 
 | `columns` | number | Number of columns |
 | `columnGutter` | number | Column gutter in mm |
 | `autosize` | `OFF` \| `HEIGHT_ONLY` \| `WIDTH_ONLY` \| `HEIGHT_AND_WIDTH` \| `HEIGHT_AND_WIDTH_PROPORTIONALLY` | Auto-sizing type |
+| `autosizeReference` | `top-left` \| `top` \| `top-right` \| `left` \| `center` \| `right` \| `bottom-left` \| `bottom` \| `bottom-right` | Point of the frame that stays in place when auto-size resizes it (default with autosize: top-left, so the frame keeps its x / y) |
 | `textWrap` | `NONE` \| `BOUNDING_BOX` \| `CONTOUR` \| `JUMP_OBJECT` \| `NEXT_COLUMN` | How text wraps around this object |
 | `textWrapOffset` | number | Text wrap offset on all sides in mm |
 
@@ -1607,6 +1624,17 @@ Write a note for the author of this server in NOTES.md: a bug, a missing feature
 Read NOTES.md, the improvement notes written so far for the author of this server (bugs, wanted features, workarounds, local fixes), with the path of the server folder.
 
 _No parameters._
+
+#### `set_page_size`
+
+Give pages their own size (mm), e.g. one page per web section of a different height. The page grows or shrinks from anchor (default top-left); objects keep their place on the page. pageIndexes: the pages (0-based); omit for every page. The document default size is unchanged.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `pageIndexes` | number[] | Pages to resize (0-based); omit for every page |
+| `width` | number | New width in mm (default: unchanged) |
+| `height` | number | New height in mm (default: unchanged) |
+| `anchor` | `top-left` \| `top` \| `top-right` \| `left` \| `center` \| `right` \| `bottom-left` \| `bottom` \| `bottom-right` | Point of the page that stays in place Default: `"top-left"`. |
 
 <!-- TOOLS:END -->
 

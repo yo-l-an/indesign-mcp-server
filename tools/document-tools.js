@@ -7,6 +7,14 @@
 import os from 'os';
 import path from 'path';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
+import { has } from '../lib/tool-context.js';
+
+// set_page_size / add_page anchor -> AnchorPoint
+const PAGE_ANCHORS = {
+  'top-left': 'TOP_LEFT_ANCHOR', top: 'TOP_CENTER_ANCHOR', 'top-right': 'TOP_RIGHT_ANCHOR',
+  left: 'LEFT_CENTER_ANCHOR', center: 'CENTER_ANCHOR', right: 'RIGHT_CENTER_ANCHOR',
+  'bottom-left': 'BOTTOM_LEFT_ANCHOR', bottom: 'BOTTOM_CENTER_ANCHOR', 'bottom-right': 'BOTTOM_RIGHT_ANCHOR',
+};
 
 // A document that was never saved, saved with no filePath, goes to this folder under its own name
 const DEFAULT_SAVE_DIR = () => process.env.INDESIGN_DEFAULT_SAVE_DIR || path.join(os.homedir(), 'Documents');
@@ -87,13 +95,29 @@ export function createDocumentTools(ctx) {
     {
       name: 'add_page',
       modifies: true,
-      description: 'Add a new page to the document',
+      description: 'Add a new page to the document. width / height (mm) give the new page its own size (see set_page_size).',
       inputSchema: {
         type: 'object',
         properties: {
           position: { type: 'string', enum: ['before', 'after', 'end'], default: 'end' },
           pageIndex: { type: 'number', description: 'Reference page index (for before/after)' },
           masterPage: { type: 'string', description: 'Master page to apply' },
+          width: { type: 'number', description: 'Width of the new page in mm (default: document size)' },
+          height: { type: 'number', description: 'Height of the new page in mm (default: document size)' },
+        },
+      },
+    },
+    {
+      name: 'set_page_size',
+      modifies: true,
+      description: 'Give pages their own size (mm), e.g. one page per web section of a different height. The page grows or shrinks from anchor (default top-left); objects keep their place on the page. pageIndexes: the pages (0-based); omit for every page. The document default size is unchanged.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          pageIndexes: { type: 'array', items: { type: 'number' }, description: 'Pages to resize (0-based); omit for every page' },
+          width: { type: 'number', description: 'New width in mm (default: unchanged)' },
+          height: { type: 'number', description: 'New height in mm (default: unchanged)' },
+          anchor: { type: 'string', enum: Object.keys(PAGE_ANCHORS), description: 'Point of the page that stays in place', default: 'top-left' },
         },
       },
     },
@@ -241,6 +265,13 @@ export function createDocumentTools(ctx) {
         var pn = [];
         for (var q = 0; q < doc.pages.length; q++) pn.push(doc.pages[q].name);
         info += "Page names: " + (pn.length > 40 ? pn.slice(0, 20).join(", ") + " ... " + pn.slice(-10).join(", ") : pn.join(", ")) + "\\n";
+        // Pages resized with set_page_size differ from the document size: list them
+        var odd = [];
+        for (var q2 = 0; q2 < doc.pages.length; q2++) {
+          var qb = doc.pages[q2].bounds, qw = qb[3] - qb[1], qh = qb[2] - qb[0];
+          if (Math.abs(qw - dp.pageWidth) > 0.01 || Math.abs(qh - dp.pageHeight) > 0.01) odd.push(doc.pages[q2].name + " " + __r(qw) + " x " + __r(qh));
+        }
+        if (odd.length) info += "Pages with their own size (mm): " + (odd.length > 20 ? odd.slice(0, 20).join(", ") + " ... (" + odd.length + ")" : odd.join(", ")) + "\\n";
         info += "\\n=== BLEED / SLUG (mm) ===\\n";
         info += "Bleed top/bottom/inside/outside: " + __r(dp.documentBleedTopOffset) + " / " + __r(dp.documentBleedBottomOffset) + " / " + __r(dp.documentBleedInsideOrLeftOffset) + " / " + __r(dp.documentBleedOutsideOrRightOffset) + "\\n";
         info += "Slug top/bottom/inside/outside: " + __r(dp.slugTopOffset) + " / " + __r(dp.slugBottomOffset) + " / " + __r(dp.slugInsideOrLeftOffset) + " / " + __r(dp.slugRightOrOutsideOffset) + "\\n";
@@ -523,8 +554,49 @@ export function createDocumentTools(ctx) {
       return this.respond(result, "Close Document");
     },
 
+    // Script lines that resize `pg` (a Page) to width x height mm, keeping `anchor` in place
+    pageResizeLines(width, height, anchor = 'top-left') {
+      const ref = PAGE_ANCHORS[anchor];
+      if (!ref) throw new Error(`Invalid anchor: ${anchor} (use ${Object.keys(PAGE_ANCHORS).join(', ')})`);
+      const size = (v, label) => {
+        const n = this.jsNum(v, label);
+        if (n < 1 || n > 5486) throw new Error(`${label} must be 1-5486 mm`);
+        return n;
+      };
+      const w = has(width) ? size(width, 'width') : null;
+      const h = has(height) ? size(height, 'height') : null;
+      if (w === null && h === null) throw new Error('Give width and/or height (mm)');
+      return `
+          var __pb = pg.bounds;
+          var __w = ${w === null ? '__pb[3] - __pb[1]' : w}, __h = ${h === null ? '__pb[2] - __pb[0]' : h};
+          // resize() takes points in the page's own coordinates; objects stay where they are
+          pg.layoutRule = LayoutRuleOptions.OFF;
+          pg.resize(CoordinateSpaces.INNER_COORDINATES, AnchorPoint.${ref}, ResizeMethods.REPLACING_CURRENT_DIMENSIONS_WITH, [__w * 72 / 25.4, __h * 72 / 25.4]);
+      `;
+    },
+
+    async setPageSize(args) {
+      const resize = this.pageResizeLines(args.width, args.height, args.anchor || 'top-left');
+      const indexes = Array.isArray(args.pageIndexes) && args.pageIndexes.length ? args.pageIndexes.map((v) => this.jsNum(v, 'pageIndexes')) : null;
+      const script = `
+        var doc = __requireDoc();
+        var list = [];
+        ${indexes ? `var idx = ${this.jsJson(indexes)}; for (var i = 0; i < idx.length; i++) list.push(__page(doc, idx[i]));` : 'for (var i = 0; i < doc.pages.length; i++) list.push(doc.pages[i]);'}
+        var out = [];
+        for (var k = 0; k < list.length; k++) {
+          var pg = list[k];
+          ${resize}
+          var nb = pg.bounds;
+          out.push("page " + pg.name + " (pageIndex " + pg.documentOffset + "): " + __r(nb[3] - nb[1]) + " x " + __r(nb[2] - nb[0]) + " mm");
+        }
+        "Page size set: " + out.join("; ");
+      `;
+      return this.respond(await this.run(script), 'Set Page Size');
+    },
+
     async addPage(args) {
       const { position = 'end', pageIndex, masterPage } = args;
+      const resize = has(args.width) || has(args.height) ? this.pageResizeLines(args.width, args.height) : '';
     
       const script = `
         if (app.documents.length === 0) {
@@ -548,7 +620,9 @@ export function createDocumentTools(ctx) {
               }
             ` : ''}
           
-            "Page added at position " + (newPage.documentOffset + 1) + ". Total pages: " + doc.pages.length;
+            ${resize ? `var pg = newPage; ${resize}` : ''}
+            var npb = newPage.bounds;
+            "Page added at position " + (newPage.documentOffset + 1) + " (" + __r(npb[3] - npb[1]) + " x " + __r(npb[2] - npb[0]) + " mm). Total pages: " + doc.pages.length;
           } catch (e) {
             throw new Error("Error adding page: " + e.message);
           }
@@ -807,6 +881,7 @@ export function createDocumentTools(ctx) {
     save_document: (args) => self.saveDocument(args),
     close_document: (args) => self.closeDocument(args),
     add_page: (args) => self.addPage(args),
+    set_page_size: (args) => self.setPageSize(args),
     delete_page: (args) => self.deletePage(args),
     duplicate_page: (args) => self.duplicatePage(args),
     navigate_to_page: (args) => self.navigateToPage(args),

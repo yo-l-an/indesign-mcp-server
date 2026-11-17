@@ -69,6 +69,7 @@ Show the PM the image(s) and the change table, then report in three short parts:
 - **Page names** are what the PM says and what `pages` takes. Tools with `pageIndex` count from 0 in file order; `prepare_edit` and `find_text` print both. A name used twice (sections) → `"+N"`, the N-th page of the file.
 - **Ids** stay valid when objects are added or reordered; `frameIndex` / `index` shift, so ids are the reliable handle.
 - **Millimetres**, origin at the top-left of each page's trim box; negative values reach into the bleed. Angles in degrees, counter-clockwise positive.
+- **Page size** is per page: `set_page_size({ pageIndexes: [0], height: 159 })` resizes from the top-left corner and leaves objects where they are; `add_page({ width, height })` adds a page of its own size. `get_document_info` lists the pages whose size differs from the document's.
 - **One document at a time**: tools act on the active document. With several documents open, or when the PM names another file, check with `list_open_documents` and `activate_document`.
 
 ### Client files: feedback and brief
@@ -117,6 +118,16 @@ For changes reported by hand (when no snapshot was possible), use the same colum
 - One backup per task. `backup: false` when the PM declined it or the task already has one; `backup_document` for an extra copy before a risky step.
 - Backups are permanent: they stay until the PM explicitly asks to delete them.
 - Going back, on the PM's request: `list_backups`, then `restore_backup({ backupPath: "<file name>", confirmDestructive: true })`. It backs up the current state first, then replaces and reopens the document.
+
+### Fitting type to a position
+
+For display type matched to a layout (a mock-up, a reference image):
+
+- Size and spacing go on the text itself: `create_text_frame` / `edit_text_frame` take `leading`, `tracking` and `horizontalScale` (percent); paragraph and character styles take `horizontalScale` too. `horizontalScale` fits a word to a width with its letters intact; `tracking` spaces them.
+- `set_text_frame_options({ id, autosize: "HEIGHT_AND_WIDTH", inset: 0 })` shrinks the frame to its text and keeps its top-left corner (`autosizeReference` picks another point).
+- `measure_text({ frameId, inkBounds: true })` gives the bounds of the visible glyphs and their offset from the frame: move the frame by the difference between the ink edge and the target edge.
+
+**Done when** the ink bounds of each word sit on their target edges (within 0.5 mm).
 
 ### Saving and where files go
 

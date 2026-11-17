@@ -10,6 +10,13 @@ import { jsStr, jsJson, jsNum, jsEnum } from '../lib/script-runtime.js';
 import { deltaE, toHex } from '../lib/color.js';
 import { has } from '../lib/tool-context.js';
 
+// autosizeReference -> AutoSizingReferenceEnum
+const AUTOSIZE_REFERENCES = {
+  'top-left': 'TOP_LEFT_POINT', top: 'TOP_CENTER_POINT', 'top-right': 'TOP_RIGHT_POINT',
+  left: 'LEFT_CENTER_POINT', center: 'CENTER_POINT', right: 'RIGHT_CENTER_POINT',
+  'bottom-left': 'BOTTOM_LEFT_POINT', bottom: 'BOTTOM_CENTER_POINT', 'bottom-right': 'BOTTOM_RIGHT_POINT',
+};
+
 const OBJECT_PROPS = {
   id: { type: 'number', description: 'Stable object id (from create_* tools, place_image or list_page_items). Preferred.' },
   pageIndex: { type: 'number', description: 'Page index (0-based); used with index', default: 0 },
@@ -151,6 +158,7 @@ export function createExtraTools(ctx) {
           columns: { type: 'number', description: 'Number of columns' },
           columnGutter: { type: 'number', description: 'Column gutter in mm' },
           autosize: { type: 'string', enum: ['OFF', 'HEIGHT_ONLY', 'WIDTH_ONLY', 'HEIGHT_AND_WIDTH', 'HEIGHT_AND_WIDTH_PROPORTIONALLY'], description: 'Auto-sizing type' },
+          autosizeReference: { type: 'string', enum: Object.keys(AUTOSIZE_REFERENCES), description: 'Point of the frame that stays in place when auto-size resizes it (default with autosize: top-left, so the frame keeps its x / y)' },
           textWrap: { type: 'string', enum: ['NONE', 'BOUNDING_BOX', 'CONTOUR', 'JUMP_OBJECT', 'NEXT_COLUMN'], description: 'How text wraps around this object' },
           textWrapOffset: { type: 'number', description: 'Text wrap offset on all sides in mm' },
         },
@@ -369,10 +377,18 @@ export function createExtraTools(ctx) {
       }
       if (has(args.columns)) lines.push(`tf.textFramePreferences.textColumnCount = ${jsNum(args.columns, 'columns')};`);
       if (has(args.columnGutter)) lines.push(`tf.textFramePreferences.textColumnGutter = ${jsNum(args.columnGutter, 'columnGutter')};`);
-      if (has(args.autosize)) {
+      if (has(args.autosize) || has(args.autosizeReference)) {
         const ok = ['OFF', 'HEIGHT_ONLY', 'WIDTH_ONLY', 'HEIGHT_AND_WIDTH', 'HEIGHT_AND_WIDTH_PROPORTIONALLY'];
-        if (!ok.includes(args.autosize)) throw new Error(`Invalid autosize: ${args.autosize}`);
-        lines.push(`tf.textFramePreferences.autoSizingType = AutoSizingTypeEnum.${args.autosize};`);
+        if (has(args.autosize) && !ok.includes(args.autosize)) throw new Error(`Invalid autosize: ${args.autosize}`);
+        // Turning auto-size on keeps the frame's top-left corner unless another point is asked for
+        const refKey = has(args.autosizeReference) ? args.autosizeReference : (args.autosize !== 'OFF' ? 'top-left' : null);
+        if (refKey) {
+          const ref = AUTOSIZE_REFERENCES[refKey];
+          if (!ref) throw new Error(`Invalid autosizeReference: ${refKey} (use ${Object.keys(AUTOSIZE_REFERENCES).join(', ')})`);
+          // the reference point goes first: InDesign resizes as soon as the type is set
+          lines.push(`tf.textFramePreferences.autoSizingReferencePoint = AutoSizingReferenceEnum.${ref};`);
+        }
+        if (has(args.autosize)) lines.push(`tf.textFramePreferences.autoSizingType = AutoSizingTypeEnum.${args.autosize};`);
       }
       if (has(args.textWrap)) {
         const map = { NONE: 'NONE', BOUNDING_BOX: 'BOUNDING_BOX_TEXT_WRAP', CONTOUR: 'CONTOUR', JUMP_OBJECT: 'JUMP_OBJECT_TEXT_WRAP', NEXT_COLUMN: 'NEXT_COLUMN_TEXT_WRAP' };
