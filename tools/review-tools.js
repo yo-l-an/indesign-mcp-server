@@ -80,7 +80,9 @@ function __uniq(list) { var seen = {}, out = []; for (var i = 0; i < list.length
 // ExtendScript: inventory of the active document (selected pages, or all) as JSON
 // pageIds: pages to include (null = all). knownIds: with pageIds, also include pages not in this
 // list (pages added since the snapshot).
-function inventoryScript(pageIds, knownIds = null) {
+// `after`: statements run once the inventory is built (they see doc and pages), so one script can
+// also render the pages; the inventory text stays the script's result
+function inventoryScript(pageIds, knownIds = null, after = '') {
   return `
     ${JSON_ES}
     var SKIP = { Image: 1, EPS: 1, PDF: 1, PICT: 1, WMF: 1, ImportedPage: 1, SVG: 1, Graphic: 1, Group: 1 };
@@ -194,11 +196,13 @@ function inventoryScript(pageIds, knownIds = null) {
     }
     var path = null;
     if (__hasFile(doc)) path = doc.fullName.fsName;
-    "INVENTORY\\n" + __js({
+    var __inventory = "INVENTORY\\n" + __js({
       document: { name: doc.name, path: path, modified: doc.modified, pageCount: doc.pages.length, allPageIds: allIds, allPages: allPg,
         paragraphStyles: __styles(doc.allParagraphStyles, true), characterStyles: __styles(doc.allCharacterStyles, false), swatches: sw },
       pages: pages
     });
+    ${after}
+    __inventory;
   `;
 }
 
@@ -291,22 +295,23 @@ export function createReviewTools(ctx) {
     } catch { /* best effort */ }
   };
 
-  const readInventory = async (pageIds, knownIds) => {
-    const out = String(await run(inventoryScript(pageIds, knownIds)));
+  const parseInventory = (out) => {
     try {
-      return JSON.parse(out.replace(/^INVENTORY\n/, ''));
+      return JSON.parse(String(out).replace(/^INVENTORY\n/, ''));
     } catch (e) {
       throw new Error(`Could not read the document inventory: ${e.message}`);
     }
   };
+  const readInventory = async (pageIds, knownIds) => parseInventory(await run(inventoryScript(pageIds, knownIds)));
 
   const readPages = async () => String(await run(PAGES_SCRIPT)).replace(/^PAGES\n/, '').split('\n').filter(Boolean).map((l) => {
     const [id, name, index] = l.split('\t');
     return { id: Number(id), name, index: Number(index) };
   });
 
-  // pages (names / "+N") or pageIndexes (0-based) -> page ids; allPages -> null (= every page)
-  const targetPageIds = async (args, { required }) => {
+  // pages (names / "+N") or pageIndexes (0-based) -> page ids; allPages -> null (= every page).
+  // getPages is only called when names or indexes have to be resolved
+  const targetPageIds = async (args, { required, getPages = readPages }) => {
     if (args.allPages === true) return null;
     const refs = Array.isArray(args.pages) ? args.pages : [];
     const idx = Array.isArray(args.pageIndexes) ? args.pageIndexes : [];
@@ -315,7 +320,7 @@ export function createReviewTools(ctx) {
       if (required) throw new Error('Say which pages: pages (names as shown in InDesign, e.g. ["12"]) or pageIndexes (0-based); pages: [] when only the page order changes; allPages: true only for document-wide changes.');
       return null;
     }
-    const pages = await readPages();
+    const pages = await getPages();
     const found = resolvePageRefs(refs, pages);
     for (const i of idx) {
       if (!Number.isInteger(i) || i < 0 || i >= pages.length) throw new Error(`Invalid page index: ${i} (document has ${pages.length} pages, 0-based)`);
@@ -324,13 +329,9 @@ export function createReviewTools(ctx) {
     return [...new Set(found.map((p) => p.id))];
   };
 
-  // All pages in one InDesign script (one round trip instead of one per page)
-  const renderPages = async (pages, resolution, dir) => {
-    if (!pages.length) return;
-    const jobs = pages.map((p) => ({ i: p.index, f: path.join(dir, `page-${p.id}.png`) }));
-    await run(`
-      var doc = __requireDoc();
-      var jobs = ${jsJson(jobs)};
+  // Statements that export pages as PNG: jobsJs is an expression giving [{ i: page index, f: file }]
+  const renderJs = (jobsJs, resolution) => `
+      var jobs = ${jobsJs};
       var prefs = app.pngExportPreferences;
       prefs.exportResolution = ${resolution};
       // Opaque page: InDesign paints the page (paper) behind the content
@@ -343,9 +344,15 @@ export function createReviewTools(ctx) {
         var out = File(jobs[j].f);
         doc.exportFile(ExportFormat.PNG_FORMAT, out, false);
         if (!out.exists) throw new Error("The page export did not create " + out.fsName);
-      }
-      "ok";
-    `);
+      }`;
+  // The scope pages of an inventory script (its \`pages\` variable) -> <dir>/page-<id>.png
+  const scopeJobsJs = (dir) => `(function () { var j = []; for (var k = 0; k < pages.length; k++) j.push({ i: pages[k].index, f: ${jsStr(dir + path.sep)} + "page-" + pages[k].id + ".png" }); return j; })()`;
+
+  // All pages in one InDesign script (one round trip instead of one per page)
+  const renderPages = async (pages, resolution, dir) => {
+    if (!pages.length) return;
+    const jobs = pages.map((p) => ({ i: p.index, f: path.join(dir, `page-${p.id}.png`) }));
+    await run(`var doc = __requireDoc();${renderJs(jsJson(jobs), resolution)}\n      "ok";`);
   };
 
   // A document converted from an older InDesign version has no fullName until it is saved, but
@@ -358,10 +365,20 @@ export function createReviewTools(ctx) {
     else { try { var fp = doc.filePath; if (fp) p = fp.fsName + "/" + doc.name.replace(/\\s*\\[[^\\]]*\\]$/, ""); } catch (e) {} }
     doc.name + "\\n" + p + "\\n" + (doc.modified ? "1" : "0") + "\\n" + (conv ? "1" : "0");
   `;
-  const activeDoc = async () => {
-    const [name, filePath, modified, converted] = String(await run(docInfoScript)).split('\n');
-    return { name, filePath: filePath && fs.existsSync(filePath) ? filePath : null, modified: modified === '1', converted: converted === '1' };
+  const docFrom = ([name, filePath, modified, converted]) => ({ name, filePath: filePath && fs.existsSync(filePath) ? filePath : null, modified: modified === '1', converted: converted === '1' });
+  const activeDoc = async () => docFrom(String(await run(docInfoScript)).split('\n'));
+  // The document and its page list in one round trip
+  const contextScript = `${docInfoScript.trim().replace(/;$/, '')} + "\\nPAGES\\n" + (function () {
+      var out = [];
+      for (var i = 0; i < doc.pages.length; i++) out.push(doc.pages[i].id + "\\t" + doc.pages[i].name + "\\t" + i);
+      return out.join("\\n");
+    })();`;
+  const readContext = async () => {
+    const [info, list] = String(await run(contextScript)).split('\nPAGES\n');
+    const pages = (list || '').split('\n').filter(Boolean).map((l) => { const [id, name, index] = l.split('\t'); return { id: Number(id), name, index: Number(index) }; });
+    return { doc: docFrom(info.split('\n')), pages };
   };
+
 
   const backupDirFor = (doc, override) => {
     if (override) return ctx.resolvePath(override);
@@ -370,18 +387,22 @@ export function createReviewTools(ctx) {
     return ctx.resolvePath(path.join(base, BACKUP_FOLDER_NAME));
   };
 
-  const makeBackup = async (doc, reason, dirOverride) => {
+  // A free backup file name (the folder is created); backupJs(target) writes the copy in InDesign
+  const backupTarget = (doc, reason, dirOverride) => {
     const dir = backupDirFor(doc, dirOverride);
     fs.mkdirSync(dir, { recursive: true });
     let target = path.join(dir, backupFileName(doc.name, reason));
     for (let n = 2; fs.existsSync(target); n++) target = target.replace(/(-\d+)?\.indd$/i, `-${n}.indd`);
-    await run(`
+    return target;
+  };
+  const backupJs = (target) => `
       var doc = __requireDoc();
-      var f = File(${jsStr(target)});
-      doc.saveACopy(f);
-      if (!f.exists) throw new Error("The backup copy was not created");
-      "ok";
-    `);
+      var __backup = File(${jsStr(target)});
+      doc.saveACopy(__backup);
+      if (!__backup.exists) throw new Error("The backup copy was not created");`;
+  const makeBackup = async (doc, reason, dirOverride) => {
+    const target = backupTarget(doc, reason, dirOverride);
+    await run(`${backupJs(target)}\n      "ok";`);
     ctx.workflow.backups.add(doc.filePath || doc.name);
     return target;
   };
@@ -571,28 +592,33 @@ export function createReviewTools(ctx) {
     pruneReviews();
     const resolution = has(args.resolution) ? jsNum(args.resolution, 'resolution') : 96;
     if (resolution < 36 || resolution > 150) throw new Error('resolution must be 36-150 dpi');
-    const pageIds = await targetPageIds(args, { required: true });
-    const doc = await activeDoc();
+    // Two round trips: the document and its pages, then backup + inventory + page renders +
+    // showing the first page in one script
+    let context = null;
+    const getContext = async () => (context ||= await readContext());
+    const pageIds = await targetPageIds(args, { required: true, getPages: async () => (await getContext()).pages });
+    const { doc, pages } = await getContext();
+    const scope = pageIds ? pageIds.length : pages.length;
+    if (scope > MAX_PAGES) throw new Error(`${scope} pages: name the pages (at most ${MAX_PAGES})`);
+    const target = args.backup !== false ? backupTarget(doc, args.reason) : null;
+    const d = new Date();
+    const id = `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}-${pad2(d.getHours())}${pad2(d.getMinutes())}${pad2(d.getSeconds())}_${slugify(doc.name.replace(/\.indd$/i, ''), 40) || 'document'}_${slugify(args.reason, 30)}`;
+    const dir = path.join(reviewRoot(), id, 'before');
+    fs.mkdirSync(dir, { recursive: true });
+    const show = `
+      // no window (e.g. document opened without one): not needed
+      try { if (pages.length) app.activeWindow.activePage = doc.pages[pages[0].index]; } catch (e) {}`;
+    const inv = parseInventory(await run(`${target ? backupJs(target) : ''}${inventoryScript(pageIds, null, renderJs(scopeJobsJs(dir), resolution) + show)}`));
     const lines = [];
-    if (args.backup !== false) {
-      const target = await makeBackup(doc, args.reason);
+    if (target) {
+      ctx.workflow.backups.add(doc.filePath || doc.name);
       lines.push(`Backup: ${target}${doc.converted ? ' (document converted from an older InDesign version: saving it will ask for a new name)' : !doc.filePath ? ' (the document was never saved: ask the user where to save it; save_document without filePath puts it in Documents)' : doc.modified ? ' (includes unsaved changes)' : ''}`);
     } else {
       lines.push('Backup: skipped (backup: false)');
     }
-    const inv = await readInventory(pageIds);
-    if (inv.pages.length > MAX_PAGES) throw new Error(`${inv.pages.length} pages: name the pages (at most ${MAX_PAGES})`);
-    const d = new Date();
-    const id = `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}-${pad2(d.getHours())}${pad2(d.getMinutes())}${pad2(d.getSeconds())}_${slugify(inv.document.name.replace(/\.indd$/i, ''), 40) || 'document'}_${slugify(args.reason, 30)}`;
-    const dir = path.join(reviewRoot(), id, 'before');
-    fs.mkdirSync(dir, { recursive: true });
-    await renderPages(inv.pages, resolution, dir);
     fs.writeFileSync(path.join(dir, 'inventory.json'), JSON.stringify({ resolution, pageIds, ...inv }));
     ctx.workflow.lastSnapshot = id;
     ctx.workflow.prepared = true;
-    try {
-      if (inv.pages.length) await run(`var doc = __requireDoc(); app.activeWindow.activePage = doc.pages[${inv.pages[0].index}]; "ok";`);
-    } catch { /* no window (e.g. document opened without one): not needed */ }
     lines.push(`Snapshot: snapshotId=${id} – ${inv.pages.length ? pageRange(inv.pages) : 'page order only'}`);
     if (args.listObjects !== false && inv.pages.length && inv.pages.length <= 6) lines.push('', ...inv.pages.map((p) => pageSummary(p)));
     else if (args.listObjects !== false && inv.pages.length) lines.push(`(${inv.pages.length} pages: object lists omitted; use list_page_items or find_text for the page you work on)`);
@@ -708,15 +734,20 @@ export function createReviewTools(ctx) {
     const maxImages = Math.max(0, Math.min(10, has(args.maxImages) ? jsNum(args.maxImages, 'maxImages') : 3));
 
     // AFTER: the snapshot pages that still exist, plus pages added since (nothing else is read)
-    const after = await readInventory(before.pageIds ? before.pages.map((p) => p.id) : null, before.pageIds ? before.document.allPageIds : null);
-    if (after.document.name !== before.document.name) {
-      throw new Error(`The active document is ${after.document.name}, the snapshot is of ${before.document.name}. Activate the right document first.`);
-    }
+    // One script: inventory, the right document, then the renders
     let n = 1;
     while (fs.existsSync(path.join(caseDir, `after-${n}`))) n++;
     const afterDir = path.join(caseDir, `after-${n}`);
     fs.mkdirSync(afterDir, { recursive: true });
-    await renderPages(after.pages, before.resolution, afterDir);
+    const sameDoc = `
+      if (doc.name !== ${jsStr(before.document.name)}) throw new Error("The active document is " + doc.name + ", the snapshot is of " + ${jsStr(before.document.name)} + ". Activate the right document first.");`;
+    let after;
+    try {
+      after = parseInventory(await run(inventoryScript(before.pageIds ? before.pages.map((p) => p.id) : null, before.pageIds ? before.document.allPageIds : null, sameDoc + renderJs(scopeJobsJs(afterDir), before.resolution))));
+    } catch (e) {
+      fs.rmSync(afterDir, { recursive: true, force: true });
+      throw e;
+    }
     fs.writeFileSync(path.join(afterDir, 'inventory.json'), JSON.stringify(after));
 
     const decoded = (f) => (fs.existsSync(f) ? decodePng(fs.readFileSync(f)) : null);
