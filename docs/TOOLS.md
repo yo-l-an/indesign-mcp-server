@@ -68,15 +68,17 @@ create_path_from_svg({
 ## Tools
 
 <!-- TOOLS:START -->
-_111 tools. Generated from the server's tool schemas by `npm run docs`._
+_141 tools. Generated from the server's tool schemas by `npm run docs`._
 
 ### Workflow, review and backups
 
 #### `get_usage_guide`
 
-Workflow guide: read once per session, before the first change to a document. Five steps (scope, prepare_edit, surgical change, review_compare, close) plus page names, ids, backups, saving, converted documents, errors and improvement notes.
+Workflow guide: read once per session, before the first change to a document. Five steps (scope, prepare_edit, surgical change, review_compare, close) plus page names, ids, backups, saving, new documents (kickstart questions), masters, layouts, errors and improvement notes. topic "manual-settings": the settings no tool reaches, with the menu path to give the user.
 
-_No parameters._
+| Parameter | Type | Description |
+|---|---|---|
+| `topic` | `workflow` \| `manual-settings` | workflow (default): the guide; manual-settings: settings the user changes by hand, with their menu path Default: `"workflow"`. |
 
 #### `prepare_edit`
 
@@ -622,6 +624,7 @@ Modify a paragraph style (same properties as create_paragraph_style). Returns th
 |---|---|---|
 | `styleName` | string | Paragraph style name to modify |
 | `name` | string | Same as styleName (either one) |
+| `newName` | string | Rename the style |
 | `baseStyle` | string | New base style |
 | `fontFamily` | string | Font family (error if not installed) |
 | `fontStyle` | string | Font style: Regular, Medium, Bold, Italic, ... |
@@ -692,6 +695,7 @@ Modify properties of an existing character style
 |---|---|---|
 | `styleName` | string | Character style name to modify |
 | `name` | string | Same as styleName (either one) |
+| `newName` | string | Rename the style |
 | `fontFamily` | string | Font family |
 | `fontStyle` | string | Font style (Regular, Bold, Italic) |
 | `fontSize` | number | Font size in points |
@@ -720,6 +724,7 @@ Modify properties of an existing object style
 |---|---|---|
 | `styleName` | string | Object style name to modify |
 | `name` | string | Same as styleName (either one) |
+| `newName` | string | Rename the style |
 | `fillColor` | string | Fill color (swatch name) |
 | `strokeColor` | string | Stroke color (swatch name) |
 | `strokeWidth` | number | Stroke width in points |
@@ -1165,7 +1170,7 @@ Distribute objects by id. distribution: left_edges, horizontal_centers, right_ed
 
 #### `set_text_frame_options`
 
-Set text frame options: insets (mm), vertical alignment, columns, auto-size and text wrap (wrap also works on other objects so text flows around them).
+Text frame options (Object > Text Frame Options): insets per side, first baseline (cap height for titles and small text, so the frame top is the top of the capitals), vertical alignment, columns (fixed or flexible width, balanced, column rule), auto-size (with its anchor point and no line breaks), its own baseline grid, ignore text wrap; and text wrap on any object. A frame with rounded or fancy corners keeps one inset for all four sides.
 
 | Parameter | Type | Description |
 |---|---|---|
@@ -1177,13 +1182,31 @@ Set text frame options: insets (mm), vertical alignment, columns, auto-size and 
 | `insetLeft` | number | Left inset in mm |
 | `insetBottom` | number | Bottom inset in mm |
 | `insetRight` | number | Right inset in mm |
-| `verticalAlignment` | `TOP` \| `CENTER` \| `BOTTOM` \| `JUSTIFY` |  |
+| `firstBaseline` | `cap_height` \| `x_height` \| `ascent` \| `leading` \| `em_box` \| `fixed` | Where the first line sits: cap_height (top of the frame = top of the capitals: titles, labels, aligning text on a grid line), x_height, ascent (default of InDesign), leading (first line on the baseline grid), em_box, fixed (= firstBaselineMin) |
+| `firstBaselineMin` | number | Minimum first-baseline offset in mm (the offset itself with firstBaseline: fixed) |
+| `verticalAlignment` | `TOP` \| `CENTER` \| `BOTTOM` \| `JUSTIFY` | Vertical alignment of the text in the frame |
 | `columns` | number | Number of columns |
 | `columnGutter` | number | Column gutter in mm |
-| `autosize` | `OFF` \| `HEIGHT_ONLY` \| `WIDTH_ONLY` \| `HEIGHT_AND_WIDTH` \| `HEIGHT_AND_WIDTH_PROPORTIONALLY` | Auto-sizing type |
-| `autosizeReference` | `top-left` \| `top` \| `top-right` \| `left` \| `center` \| `right` \| `bottom-left` \| `bottom` \| `bottom-right` | Point of the frame that stays in place when auto-size resizes it (default with autosize: top-left, so the frame keeps its x / y) |
+| `columnWidth` | number | Fixed column width in mm (the frame width follows the columns) |
+| `columnMaxWidth` | number | Flexible columns: maximum column width in mm (columns are added as the frame widens); 0 turns it off |
+| `balanceColumns` | boolean | Balance the text across the columns |
+| `columnRule` | boolean | A vertical rule between columns |
+| `columnRuleWeight` | number | Column rule weight in pt |
+| `columnRuleColor` | string | Column rule swatch |
+| `autosize` | `OFF` \| `HEIGHT_ONLY` \| `WIDTH_ONLY` \| `HEIGHT_AND_WIDTH` \| `HEIGHT_AND_WIDTH_PROPORTIONALLY` | Auto-sizing type. With a width (WIDTH_ONLY, HEIGHT_AND_WIDTH…) "no line breaks" is turned on, or the text would wrap word by word |
+| `autosizeReference` | `top-left` \| `top` \| `top-right` \| `left` \| `center` \| `right` \| `bottom-left` \| `bottom` \| `bottom-right` | Point that stays in place when auto-size resizes the frame: match the alignment (left-aligned text: top-left or left; centred: top or center; right-aligned: top-right or right; text standing on a line: bottom-…). Default: top-left |
+| `autosizeMinHeight` | number | Auto-size never makes the frame shorter than this (mm); 0 turns it off |
+| `autosizeMinWidth` | number | Auto-size never makes the frame narrower than this (mm); 0 turns it off |
+| `noLineBreaks` | boolean | Auto-size grows the width instead of breaking lines (on by default when auto-size changes the width) |
+| `baselineGrid` | `document` \| `custom` | custom: the frame has its own baseline grid (a sidebar on another leading) |
+| `baselineGridIncrement` | number | Own baseline grid: increment in pt |
+| `baselineGridStart` | number | Own baseline grid: start in mm |
+| `baselineGridRelativeTo` | `inset` \| `frame` \| `margin` \| `page` | Own baseline grid: start measured from the top inset, the frame, the top margin or the page |
+| `ignoreWrap` | boolean | Text in this frame ignores the text wrap of other objects |
 | `textWrap` | `NONE` \| `BOUNDING_BOX` \| `CONTOUR` \| `JUMP_OBJECT` \| `NEXT_COLUMN` | How text wraps around this object |
 | `textWrapOffset` | number | Text wrap offset on all sides in mm |
+| `textWrapOffsets` | number[] | Text wrap offsets [top, left, bottom, right] in mm |
+| `textWrapSide` | `both` \| `left` \| `right` \| `towards_spine` \| `away_from_spine` \| `largest_area` | Which side the text flows on |
 
 ### Images and graphics
 
@@ -1372,6 +1395,353 @@ Populate table with data
 | `data` *(required)* | array[] | Array of arrays with table data |
 | `includeHeaders` | boolean | First row contains headers Default: `true`. |
 
+### Layout setup: format, margins, grids, guides
+
+#### `get_layout_setup`
+
+The document's layout setup in one read: format and orientation, facing pages, binding, start page, intent, bleed and slug, page shuffling, spreads, margins and columns of each master (and of pages that differ), guides, baseline and document grids, sections and page numbering, masters and the pages they apply to, alternate layouts, layers.
+
+_No parameters._
+
+#### `set_document_setup`
+
+Document setup (File > Document Setup): page size, facing pages, binding direction, start page number, intent, bleed and slug (uniform or per side), page shuffling. Only the values given change. With facing pages, an even start page number puts the first page on the left.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `width` | number | Page width (mm) |
+| `height` | number | Page height (mm) |
+| `facingPages` | boolean | Facing pages (spreads of left and right pages) |
+| `binding` | `left` \| `right` | Binding edge: left (left-to-right reading, the default) or right (right-to-left) |
+| `startPageNumber` | number | Number of the first page; with facing pages an even number starts on a left page |
+| `intent` | `print` \| `web` \| `mobile` | Print (CMYK, mm) or screen (RGB, px) |
+| `bleed` | number | Bleed on every side (mm) |
+| `bleedTop` | number | Top bleed (mm) |
+| `bleedBottom` | number | Bottom bleed (mm) |
+| `bleedInside` | number | Inside (left on single pages) |
+| `bleedOutside` | number | Outside (right on single pages) |
+| `slug` | number | Slug on every side (mm) |
+| `allowPageShuffle` | boolean | false: pages keep their spreads when pages are added, removed or moved (needed for spreads of 3+ pages) |
+| `adjustLayout` | boolean | With a new page size: move and resize the objects, guides and margins with the page (File > Adjust Layout), type size included Default: `false`. |
+
+#### `set_margins_columns`
+
+Margins and columns (Layout > Margins and Columns) of masters and/or pages. Set them on the masters so every page that uses them follows; set them on a page only for an exception. Only the values given change.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `pages` | any[] | Pages as named in InDesign ("12", "+3" = 3rd page of the file, "Tablette:2" = page 2 of an alternate layout) |
+| `masters` | string[] | Masters (parent pages) by name ("A-Parent"), prefix ("A") or base name: every page of each |
+| `top` | number | Top margin (mm) |
+| `bottom` | number | Bottom margin (mm) |
+| `inside` | number | Inside margin (mm; left margin on single pages) |
+| `outside` | number | Outside margin (mm; right margin on single pages) |
+| `columns` | number | Number of columns |
+| `gutter` | number | Column gutter (mm) |
+
+#### `create_grid_guides`
+
+Layout grid as guides (Layout > Create Guides): columns and rows with gutters, inside the margins or across the page, on masters and/or pages. A 12-column grid with a 4–5 mm gutter is the usual base: 2, 3, 4 and 6 columns all fall on it. Guides on a master show on every page that uses it.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `pages` | any[] | Pages as named in InDesign ("12", "+3" = 3rd page of the file, "Tablette:2" = page 2 of an alternate layout) |
+| `masters` | string[] | Masters (parent pages) by name ("A-Parent"), prefix ("A") or base name: every page of each |
+| `columns` | number | Columns (e.g. 12, 6, 24); 0 = no vertical guides Default: `12`. |
+| `rows` | number | Rows of a modular grid; 0 = none Default: `0`. |
+| `columnGutter` | number | Gutter between columns (mm); default: the margins gutter |
+| `rowGutter` | number | Gutter between rows (mm); default: the column gutter |
+| `fitTo` | `margins` \| `page` | Divide the margin box (default) or the whole page Default: `"margins"`. |
+| `replace` | boolean | Remove the existing guides of those pages first Default: `false`. |
+| `color` | string | Guide / grid colour name: RED, BLUE, LIGHT_BLUE, GREEN, YELLOW, MAGENTA, CYAN, ORANGE, VIOLET, GRAY, BLACK… |
+
+#### `add_guides`
+
+Ruler guides at given positions (mm from the page's top-left corner) on masters and/or pages.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `pages` | any[] | Pages as named in InDesign ("12", "+3" = 3rd page of the file, "Tablette:2" = page 2 of an alternate layout) |
+| `masters` | string[] | Masters (parent pages) by name ("A-Parent"), prefix ("A") or base name: every page of each |
+| `vertical` | number[] | x positions (mm) |
+| `horizontal` | number[] | y positions (mm) |
+| `acrossSpread` | boolean | Guides across the whole spread instead of the page Default: `false`. |
+| `color` | string | Guide / grid colour name: RED, BLUE, LIGHT_BLUE, GREEN, YELLOW, MAGENTA, CYAN, ORANGE, VIOLET, GRAY, BLACK… |
+| `locked` | boolean | Lock the new guides Default: `false`. |
+
+#### `delete_guides`
+
+Remove ruler guides from masters and/or pages: all, or only vertical / horizontal ones.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `pages` | any[] | Pages as named in InDesign ("12", "+3" = 3rd page of the file, "Tablette:2" = page 2 of an alternate layout) |
+| `masters` | string[] | Masters (parent pages) by name ("A-Parent"), prefix ("A") or base name: every page of each |
+| `orientation` | `all` \| `vertical` \| `horizontal` |  Default: `"all"`. |
+
+#### `set_grids`
+
+Baseline grid and document grid (Preferences > Grids), plus guide display. Body text aligns on the baseline grid when its increment equals the body leading (11 pt type on 14 pt leading: increment 14 pt). Only the values given change.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `baselineIncrement` | number | Baseline grid increment (pt) |
+| `baselineStart` | number | Baseline grid start (mm) |
+| `baselineRelativeTo` | `page` \| `margin` | Start measured from the top of the page or the top margin |
+| `baselineColor` | string | Guide / grid colour name: RED, BLUE, LIGHT_BLUE, GREEN, YELLOW, MAGENTA, CYAN, ORANGE, VIOLET, GRAY, BLACK… |
+| `baselineShown` | boolean | Show the baseline grid |
+| `documentGridEvery` | number | Document grid: a gridline every N mm |
+| `documentGridSubdivisions` | number | Subdivisions between gridlines |
+| `documentGridShown` | boolean | Show the document grid |
+| `snapToDocumentGrid` | boolean | Snap objects to the document grid |
+| `guidesInBack` | boolean | Guides and grids behind the objects |
+
+### Aligning on the grid
+
+#### `get_page_grid`
+
+The reference lines of a page, with their positions in mm: margins, columns (start and end of each), ruler guides of the page and of its master, page edges and centre, bleed, and the baseline grid when asked. Use it before aligning, to name the lines objects should sit on.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `page` *(required)* | string | Page as named in InDesign ("12", "+3", "Tablette:2") |
+| `baseline` | boolean | Also list the baseline grid lines Default: `false`. |
+
+#### `snap_to_grid`
+
+Snap objects that sit a few mm off the page structure onto it: each edge (left, right, top, bottom) goes to the nearest margin, column edge, guide (page or master), page edge or centre, or bleed within the tolerance; mode center puts the centre of each object on the nearest line instead (column centres included). dryRun: report without changing. The lines used show in the review images.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `ids` *(required)* | number[] | Object ids |
+| `tolerance` | number | Maximum distance to a line (mm) Default: `3`. |
+| `targets` | string[] | Lines to snap to (default: margin, column, guide, page, bleed; baseline on request) |
+| `mode` | `auto` \| `move` \| `resize` \| `center` | auto: resize when both edges are near lines, else move; move: never resize; resize: each near edge on its own; center: the centre of the object goes to the nearest line (a column centre, the page centre, a guide), size kept Default: `"auto"`. |
+| `axis` | `both` \| `x` \| `y` | Snap horizontally (x), vertically (y) or both Default: `"both"`. |
+| `dryRun` | boolean | Only report what would move Default: `false`. |
+
+#### `fit_to_grid`
+
+Place objects on the column grid of their page (margins and columns of the page, set_margins_columns) and, with rowCount, on rows: span columns 3 to 6 (fit: span), or keep the size and align to the start, end or centre of those columns. columns / rows are 1-based and inclusive ([3, 6] = columns 3, 4, 5, 6). The lines used show in the review images.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `ids` *(required)* | number[] | Object ids |
+| `columns` | number[] | [first, last] column (1-based) |
+| `rows` | number[] | [first, last] row (1-based); needs rowCount |
+| `rowCount` | number | Rows of the modular grid inside the margins (as in create_grid_guides) |
+| `rowGutter` | number | Gutter between rows in mm (default: the column gutter) |
+| `fit` | `span` \| `start` \| `end` \| `center` | span: the object fills the columns / rows; start / end / center: it keeps its size and aligns there Default: `"span"`. |
+
+### French typography
+
+#### `french_typography`
+
+French typography rules on text, rule by rule: spaces: Double spaces, spaces at the start or end of paragraphs, before , and . or inside ( ) and [ ] removed \| high_punctuation: Thin no-break space before ; ! ? and word no-break space before : (no space before the second sign of ?! or after a URL / a time) \| french_quotes_spacing: Word no-break space inside « » (only where « » are already used) \| quotes (off by default): Straight "double quotes" → « guillemets » with their spaces. Contextual: English text, code, inches (12") keep theirs; turn on when the text is French and the user wants it \| apostrophe: Straight apostrophe between letters → typographic ’ (l'été → l’été) \| ellipsis: ... → … (one character); « etc. » never followed by an ellipsis \| numbers: Thin no-break space between thousands (10 000), word no-break space before units, % and currencies (12 €, 30 %, 5 km) \| dates_names: Word no-break space in dates (12 mars), after M., Mme, Dr, Me, n°, p., art., fig., chap., vol., §, and between a number and the word it counts (3 pages stays breakable) \| dashes: Spaced hyphen " - " → spaced en dash " – " (incise), number ranges 1990-2000 → 1990–2000 (not phone numbers or dates with more parts) \| ordinals: 1er, 2e, XIXe: ème / ième / me → e, suffix in superscript (1re, 2de, 3es) \| ligatures: oe → œ in the words that take it (cœur, œuvre, sœur, œil, bœuf, nœud, vœu, œuf, manœuvre…), capitals included \| accented_capitals: Accents on capitals: A la → À la (sentence start), Etat → État, Ecole → École, Equipe → Équipe… \| multiplication (off by default): Times sign between numbers: 3 x 4 → 3 × 4, 21x29,7 → 21 × 29,7 (dimensions). Contextual: off by default \| lists: punctuation of bulleted lists (report by default; semicolon = items end with ; and the last with .; none; period). Scope: one story (frameId), pages, or the whole document (master text included). dryRun counts what each rule would change, with examples: run it first and let the user turn rules off (rules: { quotes: true, ordinals: false }).
+
+| Parameter | Type | Description |
+|---|---|---|
+| `frameId` | number | The story of this text frame |
+| `pages` | any[] | The stories with text on these pages (a story that runs on goes with them) |
+| `allPages` | boolean | Every story of the document Default: `false`. |
+| `rules` | object | Turn rules on or off, e.g. { "quotes": true, "ordinals": false }. Rules: spaces, high_punctuation, french_quotes_spacing, quotes, apostrophe, ellipsis, numbers, dates_names, dashes, ordinals, ligatures, accented_capitals, multiplication |
+| `only` | string[] | Run only these rules |
+| `lists` | `report` \| `semicolon` \| `none` \| `period` | Bulleted lists: report the punctuation (default), or fix it (semicolon, none, period) Default: `"report"`. |
+| `dryRun` | boolean | Count and show examples, change nothing Default: `false`. |
+
+### Page numbers, sections, spreads
+
+#### `insert_special_character`
+
+Insert a special character in a text frame: page numbers (page_number = current page, which updates when pages move; next/previous_page_number for "continued on"), section_marker, typographic spaces (fixed_nonbreaking_space = U+202F, the French space before ; : ! ? and inside « », nonbreaking_space stretches with justification, thin, hair, em, en, figure), dashes, discretionary / nonbreaking hyphens, breaks (column, frame, page, odd/even page, forced line), right_indent_tab, indent_to_here, end_nested_style, symbols. Folios: put page_number in a frame on the master. Where: at the end (default) or start of the story, or after / before / instead of a text.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `frameId` *(required)* | number | Text frame id (its story) |
+| `character` *(required)* | `page_number` \| `next_page_number` \| `previous_page_number` \| `section_marker` \| `nonbreaking_space` \| `fixed_nonbreaking_space` \| `thin_space` \| `hair_space` \| `em_space` \| `en_space` \| `figure_space` \| `punctuation_space` \| `flush_space` \| `em_dash` \| `en_dash` \| `discretionary_hyphen` \| `nonbreaking_hyphen` \| `forced_line_break` \| `column_break` \| `frame_break` \| `page_break` \| `odd_page_break` \| `even_page_break` \| `right_indent_tab` \| `indent_to_here` \| `end_nested_style` \| `ellipsis` \| `bullet` \| `copyright` \| `registered` \| `trademark` \| `section_symbol` \| `paragraph_symbol` \| `degree` \| `left_double_quote` \| `right_double_quote` \| `left_single_quote` \| `right_single_quote` |  |
+| `position` | `end` \| `start` |  Default: `"end"`. |
+| `after` | string | Insert after the first occurrence of this text |
+| `before` | string | Insert before the first occurrence of this text |
+| `replace` | string | Replace every occurrence of this text with the character (e.g. a typed folio "12" by page_number) |
+
+#### `set_section`
+
+Start a section at a page (Numbering & Section Options): page numbering restart, style (1, 01, i, I, a, A), prefix and section marker. The page numbers shown by page-number characters follow it. remove: true removes the section that starts at that page (the first page always keeps one).
+
+| Parameter | Type | Description |
+|---|---|---|
+| `page` *(required)* | string | Page where the section starts (as named in InDesign, or "+N") |
+| `startNumber` | number | Restart numbering at this number (omit to continue from the previous section) |
+| `style` | `1` \| `01` \| `001` \| `0001` \| `i` \| `I` \| `a` \| `A` | Number style: 1, 01, 001, 0001, i, I, a, A |
+| `prefix` | string | Section prefix (e.g. "A-") |
+| `includePrefix` | boolean | Show the prefix in page numbers on the pages |
+| `marker` | string | Section marker text (shown by the section_marker character) |
+| `remove` | boolean | Remove the section that starts at this page Default: `false`. |
+
+#### `set_spread_options`
+
+Spreads: keep the spreads of these pages together (allowShuffle: false, an "island spread" that stays as it is when pages are added or moved), or let them reflow again; join pages into one spread (a gatefold of 3 or 4 pages: joinPages, in reading order).
+
+| Parameter | Type | Description |
+|---|---|---|
+| `pages` | any[] | Pages as named in InDesign ("12", "+3" = 3rd page of the file, "Tablette:2" = page 2 of an alternate layout) |
+| `allowShuffle` | boolean | false keeps each spread of these pages together |
+| `joinPages` | any[] | Pages to gather into the spread of the first one, in order (e.g. ["4", "5", "6"]) |
+
+#### `view_page_map`
+
+The document seen from above: every spread as small page images, like the Pages panel, page names under the pages and a band with the name of each alternate layout. Returns the image file to show the user. layout: only that layout.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `layout` | string | Only the pages of this alternate layout |
+| `language` | `fr` \| `en` |  Default: `"fr"`. |
+
+### Masters (parent pages)
+
+#### `find_repeated_items`
+
+Find objects repeated at the same place on several pages (backgrounds, headers, footers, folios, logos, frames of a recurring layout): candidates for a master. Each pattern lists its pages and the object ids on one page, with the create_master call that turns it into a master. Typed folios (digits only) count as the same object.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `pages` | any[] | Pages to scan (default: all) |
+| `minPages` | number | Report objects found on at least this many pages Default: `3`. |
+| `tolerance` | number | Position tolerance (mm) Default: `0.5`. |
+
+#### `create_master`
+
+Create a master (parent page). Optionally copy objects into it (fromIds: objects of one page, or of a left and a right page for facing masters; they land on the master page of the same side at the same place), turn typed folios into automatic page numbers (pageNumberIds), apply it to pages, and delete from those pages the objects the master now provides (removeMatching). Without fromIds the master is empty (or a copy of basedOn's items through inheritance).
+
+| Parameter | Type | Description |
+|---|---|---|
+| `name` *(required)* | string | Base name, e.g. "Chapitre" |
+| `prefix` | string | Prefix shown on pages (1-4 characters); default: next free letter |
+| `pageCount` | number | Pages in the master: 2 for facing pages (default), 1 otherwise |
+| `basedOn` | string | Parent master: this master inherits its objects and changes with it |
+| `fromIds` | number[] | Objects to copy into the master (they stay where they are) |
+| `pageNumberIds` | number[] | Among fromIds: text frames whose digits become the automatic page number |
+| `applyTo` | any[] | Pages to apply the master to |
+| `removeMatching` | boolean | On those pages, delete the objects that match fromIds (same kind, place, colours, text; folios match any number) Default: `false`. |
+| `tolerance` | number | Matching tolerance (mm) Default: `0.5`. |
+
+#### `copy_to_master`
+
+Copy objects (by id) into an existing master, at the same place on the master page of the same side. Same options as create_master: pageNumberIds, removeOriginals (delete the copied objects from their page), applyTo + removeMatching.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `master` *(required)* | string | Master by name ("B-Chapitre"), prefix ("B") or base name |
+| `ids` *(required)* | number[] | Objects to copy into the master |
+| `pageNumberIds` | number[] | Among ids: text frames whose digits become the automatic page number |
+| `removeOriginals` | boolean | Delete the copied objects from their page Default: `false`. |
+| `applyTo` | any[] | Pages to apply the master to |
+| `removeMatching` | boolean | On those pages, delete the objects that match ids Default: `false`. |
+| `tolerance` | number | Matching tolerance (mm) Default: `0.5`. |
+
+#### `apply_master`
+
+Apply a master to pages ("none" removes it), and/or show or hide master objects on their spreads.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `pages` *(required)* | any[] | Pages as named in InDesign ("12", "+3", "Tablette:2") |
+| `master` | string | Master name / prefix, or "none" |
+| `showMasterItems` | boolean | false hides the master objects on the spreads of these pages |
+
+#### `list_master_items`
+
+Objects of a master, page by page, with their ids: edit them with the usual tools (set_object_geometry, edit_text_frame, find_replace_text…) to change every page that uses the master. With page: the master objects shown on that page, and the ones already overridden there.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `master` | string | Master by name ("B-Chapitre"), prefix ("B") or base name |
+| `page` | string | A document page instead: its master objects and overrides |
+
+#### `override_master_items`
+
+Override master objects on a page (Ctrl/Cmd+Shift+click): the page gets an editable copy linked to the master object, with a new id (returned). all: true overrides every master object of the page. detach: true cuts the link (the copy no longer follows the master).
+
+| Parameter | Type | Description |
+|---|---|---|
+| `page` *(required)* | string | Page as named in InDesign |
+| `ids` | number[] | Master object ids (list_master_items) |
+| `all` | boolean | Override every master object of the page Default: `false`. |
+| `detach` | boolean | Cut the link to the master Default: `false`. |
+
+#### `remove_master_overrides`
+
+Give overridden objects back to their master: the page copy (and its edits) is deleted and the master version shows again. ids: overridden copies on the page; all: true every override of the page.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `page` *(required)* | string | Page as named in InDesign |
+| `ids` | number[] | Overridden copies on the page |
+| `all` | boolean | Every override of the page Default: `false`. |
+| `confirmDestructive` | boolean | Confirm an action that deletes or overwrites (only when the user asked for it) Default: `false`. |
+
+#### `set_master`
+
+Rename a master (name and/or prefix), or base it on another master ("none" to stop inheriting).
+
+| Parameter | Type | Description |
+|---|---|---|
+| `master` *(required)* | string | Master by name ("B-Chapitre"), prefix ("B") or base name |
+| `newName` | string | New base name |
+| `prefix` | string | New prefix (1-4 characters) |
+| `basedOn` | string | Parent master, or "none" |
+
+#### `delete_master`
+
+Delete a master. Its pages get replaceWith (a master name or "none"; default "none"). Overridden copies stay on their pages as plain objects.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `master` *(required)* | string | Master by name ("B-Chapitre"), prefix ("B") or base name |
+| `replaceWith` | string | Master for the pages that used it, or "none" Default: `"none"`. |
+| `confirmDestructive` | boolean | Confirm an action that deletes or overwrites (only when the user asked for it) Default: `false`. |
+
+### Alternate layouts
+
+#### `create_alternate_layout`
+
+Create an alternate layout (Layout > Create Alternate Layout): a copy of a layout's pages in another format or as a variant, in the same document. Text stays linked to the source by default (edits to the source can be pushed to it); pass linkStories: false for an independent version. Its pages are named "Layout:page" in the tools. rule: how objects adapt to the new size (preserve = as laid out on the source, scale, recenter, guides, objects = liquid layout rules, master).
+
+| Parameter | Type | Description |
+|---|---|---|
+| `name` *(required)* | string | Layout name, e.g. "A5 portrait" or "Version B" |
+| `from` | string | Source layout (default: the first one) |
+| `preset` | `A3` \| `A4` \| `A5` \| `A6` \| `Letter` \| `Legal` \| `Tabloid` | Page size preset |
+| `orientation` | `portrait` \| `landscape` |  |
+| `width` | number | Page width (mm); default: the source size |
+| `height` | number | Page height (mm) |
+| `linkStories` | boolean | Keep text linked to the source layout Default: `true`. |
+| `copyStyles` | boolean | Copy the text styles into a style group of the new layout Default: `false`. |
+| `rule` | `preserve` \| `off` \| `scale` \| `recenter` \| `guides` \| `objects` \| `master` |  Default: `"preserve"`. |
+
+#### `delete_alternate_layout`
+
+Delete an alternate layout and its pages.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `name` *(required)* | string | Layout to delete |
+| `confirmDestructive` | boolean | Confirm an action that deletes or overwrites (only when the user asked for it) Default: `false`. |
+
+#### `compare_layouts`
+
+Compare two alternate layouts page by page (the n-th page of one with the n-th of the other), or two given pages (pageA / pageB, e.g. "3" and "Tablette:3"): images side by side, each layout named, with numbered zones (orange = differs, red / green = only on one side), and a table of what differs: place and size (mm and % of the page), text, type size, fonts, styles, colours, images. Use it to explain how one version differs from the other.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `a` | string | First layout |
+| `b` | string | Second layout |
+| `pages` | any[] | Only these positions in the layouts ("1", "+2"…: page names of layout a) |
+| `pageA` | string | Or: one page ("Layout:page" or a page name) |
+| `pageB` | string | Its counterpart |
+| `maxImages` | number | Images returned inline (all are saved) Default: `3`. |
+| `language` | `fr` \| `en` |  Default: `"fr"`. |
+
 ### Layers
 
 #### `create_layer`
@@ -1419,6 +1789,31 @@ Move objects (by id) to another layer. They keep their page and position; on the
 | `ids` *(required)* | number[] | Object ids |
 | `layerName` *(required)* | string | Target layer |
 
+#### `set_layer`
+
+Change a layer: rename it, show / hide, lock / unlock, printing on / off (non-printing layers hold notes and guides for the team), its colour, and whether its guides show or are locked.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `name` *(required)* | string | Layer to change |
+| `newName` | string | New name |
+| `visible` | boolean | Show or hide the layer |
+| `locked` | boolean | Lock or unlock the layer |
+| `printable` | boolean | false: the layer is not printed or exported |
+| `color` | string | Layer colour name, e.g. RED, BLUE, LIGHT_BLUE, GREEN, YELLOW |
+| `showGuides` | boolean | Show the guides of this layer |
+| `lockGuides` | boolean | Lock the guides of this layer |
+
+#### `delete_layer`
+
+Delete a layer. Its objects are deleted with it, unless moveItemsTo names a layer to keep them on.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `name` *(required)* | string | Layer to delete |
+| `moveItemsTo` | string | Layer that receives the objects first |
+| `confirmDestructive` | boolean | Confirm an action that deletes or overwrites (only when the user asked for it) Default: `false`. |
+
 ### Export and production
 
 #### `export_pdf`
@@ -1430,6 +1825,7 @@ Export the active document as PDF. preset: Print/HighQualityPrint = [High Qualit
 | `filePath` *(required)* | string | Output PDF file path |
 | `preset` | string | Preset alias or exact PDF preset name Default: `"HighQualityPrint"`. |
 | `pageRange` | string | Pages, e.g. "1", "2-3", "1,3-5" or "all" Default: `"all"`. |
+| `layout` | string | Only the pages of this alternate layout (pageRange then counts within it: "1-2" = its first two pages) |
 | `includeBleed` | boolean | Use the document bleed Default: `false`. |
 | `includeSlug` | boolean | Include the slug area Default: `false`. |
 | `confirmDestructive` | boolean | Required only when the file already exists (it is overwritten) Default: `false`. |
@@ -1444,6 +1840,7 @@ Export pages as PNG or JPEG, one file per page: <folder>/<documentname>_page<N>.
 | `format` | `PNG` \| `JPEG` |  Default: `"PNG"`. |
 | `resolution` | number | Export resolution in dpi (e.g. 72, 100, 300) Default: `300`. |
 | `pageRange` | string | Pages, e.g. "1", "2-3", "1,3-5" or "all" Default: `"all"`. |
+| `layout` | string | Only the pages of this alternate layout (pageRange then counts within it) |
 | `includeBleed` | boolean | Include the document bleed Default: `false`. |
 | `confirmDestructive` | boolean | Required only when the folder already holds files Default: `false`. |
 
@@ -1492,6 +1889,18 @@ Merge the active document (which needs data field placeholders) with a CSV/TXT d
 | `confirmDestructive` | boolean | Required only when the output folder already holds files Default: `false`. |
 
 ### Utilities
+
+#### `run_script`
+
+Run a short ExtendScript (ES3) on the active document for a case no tool covers yet: a property the tools do not expose, a one-off batch over many objects, a check. Prefer it to changing the server when the need is particular or not critical. `doc` is the active document; __findById(doc, id) finds an object; lengths are mm with the origin at each page's top-left; the last expression is the result (return text: ids, values, what changed). Files, the system, menus, saving and exporting stay with their tools. Each run is noted in NOTES.md (purpose, missing tool, code) for the author; a need that comes back or blocks a task deserves a real tool instead.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `purpose` *(required)* | string | One line: what the script does (it titles the note) |
+| `code` *(required)* | string | ExtendScript (ES3: var, function, no arrow functions or template strings); the last expression is the result |
+| `missing` | string | What tool or option would have made the script unnecessary |
+| `ids` | number[] | Objects the script changes (their pages join the automatic snapshot, so review_compare shows the change) |
+| `pageIndex` | number | Page the script changes (0-based), when it changes no object by id |
 
 #### `execute_indesign_code`
 

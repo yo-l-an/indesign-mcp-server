@@ -47,7 +47,10 @@ More than 100 tools, grouped by job:
 | **Corrections** | Find quoted text, replace a word inside one frame, restyle, move, resize or rotate an object by id, move objects and pages. |
 | **Client files** | Read a Word or PDF brief as Markdown. Turn PDF annotations and Word comments or tracked changes into one task list. |
 | **Layout** | Documents, pages of any size, text frames, Markdown with your styles, tables, layers, groups, alignment. |
-| **Typography** | Paragraph, character and object styles, leading, tracking, horizontal scale, typography and imported-text clean-up. |
+| **Document frame** | A kickstart round of questions (format, bleed, margins, grid, baseline grid, numbering), then document setup, facing pages and binding, margins and columns, column and modular grids as guides, baseline grid, sections, automatic page numbers. |
+| **Masters and versions** | Repeated objects found and moved to masters, overrides per page, alternate layouts for other formats or versions, compared side by side; the whole document seen from above. |
+| **Typography** | Paragraph, character and object styles, leading, tracking, horizontal scale, text frame options (first baseline, auto-size, columns, own baseline grid), French typography rule by rule (no-break spaces, « », œ, ordinals, list punctuation), imported-text clean-up. |
+| **Alignment** | Every reference line of a page (margins, columns, guides, baseline grid), objects snapped onto them or placed on columns and rows; the review draws the lines used. |
 | **Vector graphics** | Paths from SVG data, lines, polygons, stars, rounded corners, pathfinder, gradients, opacity, overprint. |
 | **Images** | Place images and graphics (SVG, PDF, AI, EPS), into frames or shapes. |
 | **Colour** | CMYK, RGB and spot swatches. Hex or RGB is converted to print CMYK through the document profile, with a gamut check. |
@@ -135,6 +138,7 @@ Set these in the `env` block of the client configuration. All are optional.
 
 - [GUIDE.md](GUIDE.md): the workflow agents follow.
 - [docs/TOOLS.md](docs/TOOLS.md): units and coordinates, colour, saving, every tool, known limits.
+- [docs/MANUAL-SETTINGS.md](docs/MANUAL-SETTINGS.md): the settings no tool reaches, with their menu path (French and English); agents read it through `get_usage_guide({ topic: "manual-settings" })`.
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md): how scripts run, debugging, tests, troubleshooting.
 
 ## Contributing

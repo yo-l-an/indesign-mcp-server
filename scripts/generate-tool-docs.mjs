@@ -23,9 +23,15 @@ const CATEGORIES = [
   ['Images and graphics', ['place_image', 'place_image_in_shape', 'place_graphic', 'create_graphic_from_svg', 'create_cmyk_pdf_shape']],
   ['Colour', ['create_color_swatch', 'update_color_swatch', 'delete_color_swatch', 'list_color_swatches', 'apply_color', 'convert_rgb_to_cmyk']],
   ['Tables', ['create_table', 'populate_table']],
-  ['Layers', ['create_layer', 'set_active_layer', 'list_layers', 'move_layer', 'move_to_layer']],
+  ['Layout setup: format, margins, grids, guides', ['get_layout_setup', 'set_document_setup', 'set_margins_columns', 'create_grid_guides', 'add_guides', 'delete_guides', 'set_grids']],
+  ['Aligning on the grid', ['get_page_grid', 'snap_to_grid', 'fit_to_grid']],
+  ['French typography', ['french_typography']],
+  ['Page numbers, sections, spreads',['insert_special_character', 'set_section', 'set_spread_options', 'view_page_map']],
+  ['Masters (parent pages)', ['find_repeated_items', 'create_master', 'copy_to_master', 'apply_master', 'list_master_items', 'override_master_items', 'remove_master_overrides', 'set_master', 'delete_master']],
+  ['Alternate layouts', ['create_alternate_layout', 'delete_alternate_layout', 'compare_layouts']],
+  ['Layers', ['create_layer', 'set_active_layer', 'list_layers', 'move_layer', 'move_to_layer', 'set_layer', 'delete_layer']],
   ['Export and production', ['export_pdf', 'export_images', 'export_epub', 'package_document', 'preflight_document', 'data_merge']],
-  ['Utilities', ['execute_indesign_code', 'add_improvement_note', 'read_improvement_notes']],
+  ['Utilities', ['run_script', 'execute_indesign_code', 'add_improvement_note', 'read_improvement_notes']],
 ];
 
 const client = new Client({ name: 'docs', version: '1' }, { capabilities: {} });

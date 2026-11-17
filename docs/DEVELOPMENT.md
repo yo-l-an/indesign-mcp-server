@@ -14,6 +14,10 @@ Execution goes through one module, `lib/executor.js`: it wraps the script, runs 
 - Reserved words such as `char`, `int`, `long` cannot be variable names ("Illegal use of reserved word").
 - Look objects up with `doc.pageItems.itemByID(id).getElements()[0]`; the plain result is a generic `PageItem` without type-specific properties.
 - A PDF preset overrides `app.pdfExportPreferences` (bleed, slug); only `pageRange` is taken from the preferences.
+- Find/change skips master pages unless `app.findChangeTextOptions.includeMasterPages` / `app.findChangeGrepOptions.includeMasterPages` is true, even on a story that sits on a master: set it, and restore it after.
+- Geometry on a facing master spread follows the ruler origin: with the spread origin, `[y, 10, …]` added to the right master page lands on the left one, and `page.masterPageItems` is then empty. The wrapper switches to page origin only when a document is open when the script starts; a script that creates its document must set `viewPreferences.rulerOrigin` itself.
+- Alternate layouts are sections: `section.alternateLayout` names the layout, `page.appliedAlternateLayout` is the page's section. `doc.createAlternateLayout(spreads, name, width, height, copyStyles, linkStories, LayoutRuleOptions)` and `doc.deleteAlternateLayout(name)` create and remove them.
+- In a story's `contents`, the page-number character reads `\u0018` and the section marker `\u0019`; `characters[i].contents` gives the `SpecialCharacters` enum instead.
 
 ### Debugging
 Scripts live in `$TMPDIR/indesign-mcp/` (macOS) or `%TEMP%\indesign-mcp\` (Windows). A successful run deletes its script; a failed run **keeps** it and the error message ends with `[debug script: <path>]`. Kept scripts older than three days are removed automatically. Open the `.jsx` in the ExtendScript debugger, run it from InDesign's Scripts panel, or on macOS run it with `osascript -e 'tell application "Adobe InDesign 2026" to do script (POSIX file "<path>") language javascript'`.

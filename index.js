@@ -24,6 +24,12 @@ import { createStyleTools } from './tools/style-tools.js';
 import { createShapeTools } from './tools/shape-tools.js';
 import { createExportTools } from './tools/export-tools.js';
 import { createNotesTools } from './tools/notes-tools.js';
+import { createLayoutTools } from './tools/layout-tools.js';
+import { createMasterTools } from './tools/master-tools.js';
+import { createViewTools } from './tools/view-tools.js';
+import { createScriptTools } from './tools/script-tools.js';
+import { createAlignTools } from './tools/align-tools.js';
+import { createTypoTools } from './tools/typo-tools.js';
 import { createRegistry } from './lib/registry.js';
 import { createPolicy } from './lib/policy.js';
 import { createToolContext } from './lib/tool-context.js';
@@ -62,6 +68,7 @@ export class InDesignMCPServer {
       createReviewTools(ctx), createSourceTools(ctx), createNotesTools(),
       createDocumentTools(ctx), createTextTools(ctx), createStyleTools(ctx), createShapeTools(ctx), createExportTools(ctx),
       createExtraTools(ctx), createVectorTools(ctx), createGraphicsTools(ctx), createResourceTools(ctx),
+      createLayoutTools(ctx), createMasterTools(ctx), createViewTools(ctx), createScriptTools(ctx), createAlignTools(ctx), createTypoTools(ctx),
     ], { policy: this.policy });
     this.setupToolHandlers();
   }
