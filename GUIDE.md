@@ -56,7 +56,7 @@ Show the PM the image(s) and the change table, then report in three short parts:
 ### 5. Close the task
 
 - Further corrections on the same task ("finally 16 €"): change, then `review_compare()` again. It compares with the same BEFORE, so the PM sees the whole task.
-- Saving: ask the PM after the review; save with `save_document` once they agree.
+- Saving: ask the PM after the review; save with `save_document` once they agree. A document with no file yet ("Sans titre-1") needs a place: ask the PM and pass `filePath` (Saving, below).
 - A new, separate request starts again at step 1 with a new `prepare_edit`.
 
 **Done when** the PM has confirmed the result and said whether to save.
@@ -112,10 +112,17 @@ For changes reported by hand (when no snapshot was possible), use the same colum
 
 ### Backups and going back
 
-- `prepare_edit` writes `<document>__YYYY-MM-DD_HHhMMmSS__<reason>.indd` into **`InDesign Agent Backups`** next to the .indd (`$INDESIGN_BACKUP_DIR` overrides). It holds the state in InDesign before the task, unsaved changes included.
+- `prepare_edit` writes `<document>__YYYY-MM-DD_HHhMMmSS__<reason>.indd` into **`InDesign Agent Backups`** next to the .indd (`$INDESIGN_BACKUP_DIR` overrides); for a document never saved, into `~/Documents/InDesign Agent Backups`. It holds the state in InDesign before the task, unsaved changes included. Snapshots and `review_compare` work the same on an unsaved document.
 - One backup per task. `backup: false` when the PM declined it or the task already has one; `backup_document` for an extra copy before a risky step.
 - Backups are permanent: they stay until the PM explicitly asks to delete them.
 - Going back, on the PM's request: `list_backups`, then `restore_backup({ backupPath: "<file name>", confirmDestructive: true })`. It backs up the current state first, then replaces and reopens the document.
+
+### Saving and where files go
+
+- **New document**: ask the PM where to save it before `create_document`, then pass that path: `create_document({ preset: "A4", filePath: "~/…/Brochure.indd" })` saves it there right away.
+- **No file yet** ("Sans titre-1") and the PM could not be asked: `save_document()` (or `close_document({ save: true })`) saves it into `~/Documents` under its own name, and the result gives the path. Tell the PM that path and ask whether to move it; `save_document({ filePath })` saves it elsewhere.
+
+**Done when** every document you created or saved has a path the PM knows.
 
 ### Converted documents
 
@@ -133,4 +140,4 @@ Read the message: it names the next step (valid page names, missing parameter, w
 
 ### New documents
 
-A document created from scratch needs no backup or review. Create styles first, then frames with `paragraphStyle`; check with `render_preview` / `measure_text`; export with `export_pdf`. Logos: native paths (`create_path_from_svg`) first, `place_graphic` for .svg/.pdf/.ai/.eps, `create_graphic_from_svg` as the fallback. The full tool reference is in `README.md`.
+Ask where to save it first (Saving, above). A document built from scratch needs no review while you build it; corrections to it afterwards follow the workflow. Create styles first, then frames with `paragraphStyle`; check with `render_preview` / `measure_text`; export with `export_pdf`. Logos: native paths (`create_path_from_svg`) first, `place_graphic` for .svg/.pdf/.ai/.eps, `create_graphic_from_svg` as the fallback. The full tool reference is in `README.md`.

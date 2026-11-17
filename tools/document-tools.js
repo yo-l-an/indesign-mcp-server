@@ -4,7 +4,12 @@
 // (`modifies`) and its handler in this one file. Handlers reach the tool context (run, respond,
 // jsStr, jsNum, frameExpr…, lib/tool-context.js) through `this`.
 
+import os from 'os';
+import path from 'path';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
+
+// A document that was never saved, saved with no filePath, goes to this folder under its own name
+const DEFAULT_SAVE_DIR = () => process.env.INDESIGN_DEFAULT_SAVE_DIR || path.join(os.homedir(), 'Documents');
 
 export function createDocumentTools(ctx) {
   const definitions = [
@@ -17,10 +22,13 @@ export function createDocumentTools(ctx) {
     {
       name: 'create_document',
       modifies: false,
-      description: 'Create a new document (units: mm). Presets: A3, A4, A5, Letter, Legal, Custom. For Custom, width/height are in mm; an explicit orientation swaps them if needed (Landscape => width >= height, Portrait => height >= width); without orientation they are used as given.',
+      paths: ['filePath'],
+      overwrites: 'filePath',
+      description: 'Create a new document (units: mm). Ask the user where to save it first and pass filePath: the document is saved there right away. Presets: A3, A4, A5, Letter, Legal, Custom. For Custom, width/height are in mm; an explicit orientation swaps them if needed (Landscape => width >= height, Portrait => height >= width); without orientation they are used as given.',
       inputSchema: {
         type: 'object',
         properties: {
+          filePath: { type: 'string', description: 'The .indd file to save the new document to (where the user asked)' },
           preset: { type: 'string', enum: ['A3', 'A4', 'A5', 'Letter', 'Legal', 'Custom'], description: 'Page size preset', default: 'A4' },
           width: { type: 'number', description: 'Page width in mm (Custom only)' },
           height: { type: 'number', description: 'Page height in mm (Custom only)' },
@@ -53,7 +61,7 @@ export function createDocumentTools(ctx) {
       name: 'save_document',
       modifies: false,
       paths: ['filePath'],
-      description: 'Save a document (the active one, or the one named by "name"). Without filePath: a plain save (a document that was never saved needs a filePath). With filePath: Save As, the same document is renamed and stays open; the document\'s own file (same path) is just a plain save; overwriting a DIFFERENT existing file needs confirmDestructive. Saving to the file of another open document is refused.',
+      description: 'Save a document (the active one, or the one named by "name"). Without filePath: a plain save; a document that was never saved ("Sans titre-1") goes to the Documents folder under its own name, and the result says where (tell the user). With filePath: Save As, the same document is renamed and stays open; the document\'s own file (same path) is just a plain save; overwriting a DIFFERENT existing file needs confirmDestructive. Saving to the file of another open document is refused.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -71,7 +79,7 @@ export function createDocumentTools(ctx) {
         type: 'object',
         properties: {
           name: { type: 'string', description: 'Document name as shown by list_open_documents (default: active document)' },
-          save: { type: 'boolean', description: 'Save before closing (only for documents that already have a file)', default: false },
+          save: { type: 'boolean', description: 'Save before closing (a document that was never saved goes to the Documents folder, as with save_document)', default: false },
           confirmDestructive: { type: 'boolean', description: 'Required to discard unsaved changes', default: false },
         },
       },
@@ -290,8 +298,10 @@ export function createDocumentTools(ctx) {
         marginTop = 20,
         marginBottom = 20,
         marginLeft = 20,
-        marginRight = 20
+        marginRight = 20,
+        filePath,
       } = args;
+      if (filePath && !/\.ind[dt]$/i.test(filePath)) throw new Error('filePath must end with .indd (or .indt for a template)');
 
       // Page sizes in mm (portrait)
       const presets = {
@@ -379,8 +389,12 @@ export function createDocumentTools(ctx) {
           targets[t].marginPreferences.right = "${mRight}mm";
         }
       
-        "Document created: " + doc.name + " - " + ${this.jsStr(preset)} + " (" + __r(doc.documentPreferences.pageWidth) + " x " + __r(doc.documentPreferences.pageHeight) + " mm), " + 
-        doc.pages.length + " pages, " + (doc.documentPreferences.facingPages ? "facing pages" : "single pages");
+        ${filePath ? `var target = File(${this.jsStr(filePath)});
+        if (!target.parent.exists) target.parent.create();
+        doc.save(target);
+        var saved = "saved as " + doc.fullName.fsName;` : `var saved = "not saved yet: ask the user where to save it, then save_document({ filePath })";`}
+        "Document created: " + doc.name + " - " + ${this.jsStr(preset)} + " (" + __r(doc.documentPreferences.pageWidth) + " x " + __r(doc.documentPreferences.pageHeight) + " mm), " +
+        doc.pages.length + " pages, " + (doc.documentPreferences.facingPages ? "facing pages" : "single pages") + "; " + saved;
       `;
 
       const result = await this.run(script);
@@ -408,6 +422,22 @@ export function createDocumentTools(ctx) {
 
       const result = await this.run(script);
       return this.respond(result, "Open Document");
+    },
+
+    // ES3 that saves the never-saved document \`doc\` into the default folder under a free name and
+    // sets __untitledMessage. A converted document keeps asking for a filePath: saving it next to
+    // the original replaces the old-version file, so that is the user's call.
+    untitledSaveScript() {
+      const dir = this.resolvePath(DEFAULT_SAVE_DIR()) + path.sep;
+      return `
+            if (doc.converted) throw new Error("Document " + doc.name + " was converted from an older InDesign version: ask the user which file name to use, then pass filePath.");
+            var __oldName = doc.name;
+            var __base = __oldName.replace(/\\.ind[dt]$/i, "").replace(/[\\/:]/g, "-");
+            var __saved = File(${this.jsStr(dir)} + __base + ".indd");
+            for (var __n = 2; __saved.exists; __n++) __saved = File(${this.jsStr(dir)} + __base + "-" + __n + ".indd");
+            if (!__saved.parent.exists) __saved.parent.create();
+            doc.save(__saved);
+            var __untitledMessage = "Document " + __oldName + " had never been saved: saved to " + __saved.fsName + " (default folder, no location was given). Tell the user, and ask whether to move it: save_document({ filePath }) saves it elsewhere (this copy stays where it is).";`;
     },
 
     async saveDocument(args) {
@@ -444,9 +474,13 @@ export function createDocumentTools(ctx) {
             "Document saved as: " + target.fsName + " (Save As: the document " + oldName + " is now named " + doc.name + "; " + app.documents.length + " document(s) open)";
           }
         ` : `
-          if (!hasFile) throw new Error("Document " + doc.name + " has never been saved: pass filePath (the .indd file to create) to save it.");
-          doc.save();
-          "Document saved: " + doc.name + " (" + doc.fullName.fsName + ")";
+          if (!hasFile) {
+            ${this.untitledSaveScript()}
+            __untitledMessage;
+          } else {
+            doc.save();
+            "Document saved: " + doc.name + " (" + doc.fullName.fsName + ")";
+          }
         `}
       `;
 
@@ -467,9 +501,14 @@ export function createDocumentTools(ctx) {
           } else {
             var docName = doc.name;
             if (${save ? 'true' : 'false'}) {
-              if (!__hasFile(doc)) throw new Error("Document " + docName + " has never been saved; save_document with a filePath first.");
-              doc.close(SaveOptions.YES);
-              "Document saved and closed: " + docName;
+              if (!__hasFile(doc)) {
+                ${this.untitledSaveScript()}
+                doc.close(SaveOptions.NO);
+                __untitledMessage + " The document is closed.";
+              } else {
+                doc.close(SaveOptions.YES);
+                "Document saved and closed: " + docName;
+              }
             } else if (doc.modified && !${confirmDestructive ? 'true' : 'false'}) {
               throw new Error("Document " + docName + " has unsaved changes. Pass save=true, or confirmDestructive=true to discard them.");
             } else {

@@ -60,7 +60,7 @@ review_compare()                                                  // images + ch
 
 - **Client files** first: `read_feedback({ path, locate: true })` for a commented PDF or Word file, `read_source_document({ path, outline: true })` for a brief; unclear items go to the project manager before any change.
 - **Pages** are addressed as the project manager names them (page names shown in InDesign); `"+N"` = N-th page of the file.
-- **Backups**: `<document>__YYYY-MM-DD_HHhMMmSS__<reason>.indd` in `InDesign Agent Backups/` next to the document (`INDESIGN_BACKUP_DIR` overrides). Documents converted from an older InDesign version are backed up next to their original file.
+- **Backups**: `<document>__YYYY-MM-DD_HHhMMmSS__<reason>.indd` in `InDesign Agent Backups/` next to the document (`INDESIGN_BACKUP_DIR` overrides). Documents converted from an older InDesign version are backed up next to their original file; documents never saved into `~/Documents/InDesign Agent Backups/`.
 - **Review files** live in `$TMPDIR/indesign-mcp-review/` (removed after 3 days), never in the repository or the document folder.
 - A modifying tool called before any `prepare_edit` in a session gets a one-line reminder once (`INDESIGN_WORKFLOW_REMINDERS=0` turns it off).
 
@@ -107,6 +107,7 @@ On Windows, use a Windows path with escaped backslashes, e.g. `"args": ["C:\\pat
 
 | Variable | Purpose |
 |---|---|
+| `INDESIGN_DEFAULT_SAVE_DIR` | Folder for a never-saved document saved without `filePath` (default `~/Documents`). |
 | `INDESIGN_ALLOWED_DIRS` | Extra directories tools may read and write, besides your home folder and the shared folder (`/Users/Shared` on macOS, `C:\Users\Public` on Windows). Separate with `:` on macOS, `;` on Windows. |
 | `INDESIGN_APP_NAME` | InDesign version to script, e.g. `Adobe InDesign 2025`. On Windows the year selects the COM ProgID `InDesign.Application.2025`. |
 | `INDESIGN_COM_PROGID` | Windows only: exact COM ProgID, e.g. `InDesign.Application.2026`. Default: `InDesign.Application` (the newest registered version). |
@@ -204,7 +205,8 @@ New swatches default to **CMYK** (0-100). `hex` or RGB values are converted to C
 One policy (`lib/policy.js`) checks every file argument before a tool runs: paths are absolute (or `~/...`), inside your home folder, the shared folder or `INDESIGN_ALLOWED_DIRS`, never a system folder, with symlinks resolved. A tool that deletes (`delete_page`, `delete_object`, `delete_color_swatch`, `restore_backup`) always needs `confirmDestructive: true`; a tool that writes files needs it only when the target already exists.
 
 ### Saving
-- `save_document` without `filePath` is a plain save of the active document (or of the one named by `name`). A document that was never saved gets a clear message asking for `filePath`.
+- `save_document` without `filePath` is a plain save of the active document (or of the one named by `name`). A document that was never saved ("Sans titre-1") is saved into `~/Documents` under its own name (`-2`, `-3`… when taken; `INDESIGN_DEFAULT_SAVE_DIR` changes the folder), and the result gives the path so the user can be told; `close_document({ save: true })` does the same. A converted document still asks for `filePath`.
+- `create_document({ filePath })` saves the new document there right away: ask the user where first.
 - With `filePath` it is Save As: the same document is renamed and stays open. If the path is the document's own file, it is just a plain save (no confirmation, no failure). Overwriting a *different* existing file needs `confirmDestructive: true`; saving onto the file of another open document is refused. New files need no confirmation.
 - "Has a file" is decided from the document's file name, not from `doc.saved`; `list_open_documents`, `get_document_info`, `close_document` and `package_document` use the same test, so they also work for documents that were reopened or have unsaved changes.
 
@@ -323,10 +325,11 @@ Information about the active document: size in mm, pages (with page names), faci
 
 #### `create_document`
 
-Create a new document (units: mm). Presets: A3, A4, A5, Letter, Legal, Custom. For Custom, width/height are in mm; an explicit orientation swaps them if needed (Landscape => width >= height, Portrait => height >= width); without orientation they are used as given.
+Create a new document (units: mm). Ask the user where to save it first and pass filePath: the document is saved there right away. Presets: A3, A4, A5, Letter, Legal, Custom. For Custom, width/height are in mm; an explicit orientation swaps them if needed (Landscape => width >= height, Portrait => height >= width); without orientation they are used as given.
 
 | Parameter | Type | Description |
 |---|---|---|
+| `filePath` | string | The .indd file to save the new document to (where the user asked) |
 | `preset` | `A3` \| `A4` \| `A5` \| `Letter` \| `Legal` \| `Custom` | Page size preset Default: `"A4"`. |
 | `width` | number | Page width in mm (Custom only) |
 | `height` | number | Page height in mm (Custom only) |
@@ -339,6 +342,7 @@ Create a new document (units: mm). Presets: A3, A4, A5, Letter, Legal, Custom. F
 | `marginBottom` | number | Bottom margin in mm Default: `20`. |
 | `marginLeft` | number | Left (inside) margin in mm Default: `20`. |
 | `marginRight` | number | Right (outside) margin in mm Default: `20`. |
+| `confirmDestructive` | boolean | Confirm an action that deletes or overwrites (only when the user asked for it) Default: `false`. |
 
 #### `open_document`
 
@@ -350,7 +354,7 @@ Open an existing InDesign document
 
 #### `save_document`
 
-Save a document (the active one, or the one named by "name"). Without filePath: a plain save (a document that was never saved needs a filePath). With filePath: Save As, the same document is renamed and stays open; the document's own file (same path) is just a plain save; overwriting a DIFFERENT existing file needs confirmDestructive. Saving to the file of another open document is refused.
+Save a document (the active one, or the one named by "name"). Without filePath: a plain save; a document that was never saved ("Sans titre-1") goes to the Documents folder under its own name, and the result says where (tell the user). With filePath: Save As, the same document is renamed and stays open; the document's own file (same path) is just a plain save; overwriting a DIFFERENT existing file needs confirmDestructive. Saving to the file of another open document is refused.
 
 | Parameter | Type | Description |
 |---|---|---|
@@ -365,7 +369,7 @@ Close a document (the active one, or the one named by "name"). Documents with un
 | Parameter | Type | Description |
 |---|---|---|
 | `name` | string | Document name as shown by list_open_documents (default: active document) |
-| `save` | boolean | Save before closing (only for documents that already have a file) Default: `false`. |
+| `save` | boolean | Save before closing (a document that was never saved goes to the Documents folder, as with save_document) Default: `false`. |
 | `confirmDestructive` | boolean | Required to discard unsaved changes Default: `false`. |
 
 #### `list_open_documents`

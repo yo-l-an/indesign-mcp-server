@@ -576,7 +576,7 @@ export function createReviewTools(ctx) {
     const lines = [];
     if (args.backup !== false) {
       const target = await makeBackup(doc, args.reason);
-      lines.push(`Backup: ${target}${doc.converted ? ' (document converted from an older InDesign version: saving it will ask for a new name)' : doc.modified ? ' (includes unsaved changes)' : ''}`);
+      lines.push(`Backup: ${target}${doc.converted ? ' (document converted from an older InDesign version: saving it will ask for a new name)' : !doc.filePath ? ' (the document was never saved: ask the user where to save it; save_document without filePath puts it in Documents)' : doc.modified ? ' (includes unsaved changes)' : ''}`);
     } else {
       lines.push('Backup: skipped (backup: false)');
     }

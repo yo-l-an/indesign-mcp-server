@@ -279,7 +279,7 @@ async function main() {
     command: 'node',
     args: [path.join(__dirname, '..', 'index.js')],
     // optional real-world graphics: INDESIGN_TEST_AI=/path/file.ai  INDESIGN_TEST_EPS=/path/file.eps (their folders are made readable for the run)
-    env: { ...process.env, INDESIGN_ALLOWED_DIRS: [TMP, ...['INDESIGN_TEST_AI', 'INDESIGN_TEST_EPS', 'INDESIGN_TEST_JPG'].filter((k) => process.env[k]).map((k) => path.dirname(process.env[k]))].join(path.delimiter), INDESIGN_ALLOW_ARBITRARY_CODE: '' },
+    env: { ...process.env, INDESIGN_DEFAULT_SAVE_DIR: path.join(TMP, 'Documents'), INDESIGN_ALLOWED_DIRS: [TMP, ...['INDESIGN_TEST_AI', 'INDESIGN_TEST_EPS', 'INDESIGN_TEST_JPG'].filter((k) => process.env[k]).map((k) => path.dirname(process.env[k]))].join(path.delimiter), INDESIGN_ALLOW_ARBITRARY_CODE: '' },
   });
   client = new Client({ name: 'indesign-mcp-tests', version: '1' }, { capabilities: {} });
   await client.connect(transport);
@@ -1911,6 +1911,20 @@ async function main() {
     testDoc = flyer;
   });
 
+  await test('create_document saves where asked; close with save puts an untitled document in the default folder', async () => {
+    const target = path.join(TMP, 'new-docs', 'brochure.indd');
+    let out = await call('create_document', { preset: 'A5', filePath: target });
+    assert(/Document created: brochure\.indd - .*saved as .*brochure\.indd/.test(out) && fs.existsSync(target), out);
+    await call('close_document', { name: 'brochure.indd' });
+    await fails('create_document', { preset: 'A5', filePath: target }, /confirm/i);   // the file exists now
+    out = await call('create_document', { preset: 'A5' });
+    assert(/not saved yet: ask the user where to save it/.test(out), out);
+    const untitled = out.match(/Document created: (.+?) - /)[1];
+    out = await call('close_document', { name: untitled, save: true });
+    const saved = path.join(fs.realpathSync(path.join(TMP, 'Documents')), `${untitled}.indd`);
+    assert(out.includes(`saved to ${saved}`) && /closed/.test(out) && fs.existsSync(saved), out);
+  });
+
   await test('save_document: Save As, close, reopen, edit, plain save persists; same-path and never-saved cases', async () => {
     const dir = path.join(TMP, 'save-cases');
     fs.mkdirSync(dir, { recursive: true });
@@ -1920,15 +1934,22 @@ async function main() {
     testDoc = scratch;
     const frame = idOf(await call('create_text_frame', { content: 'version 1', x: 10, y: 10, width: 100, height: 20 }));
 
-    // a document that was never saved
-    let e = await fails('save_document', {}, /has never been saved: pass filePath/);
-    assert(!/Security|already open/.test(e), e);
+    // a document that was never saved: no filePath -> the default folder, under a free name
     assert(/path=unsaved/.test(await call('list_open_documents')), 'listed as unsaved');
+    const docsDir = path.join(TMP, 'Documents');
+    fs.mkdirSync(docsDir, { recursive: true });
+    fs.writeFileSync(path.join(docsDir, `${scratch}.indd`), 'taken');
+    let e;
+    let out = await call('save_document', {});
+    const defaultFile = path.join(fs.realpathSync(docsDir), `${scratch}-2.indd`);
+    assert(out.includes(`saved to ${defaultFile}`) && /Tell the user/.test(out) && fs.existsSync(defaultFile), out);
+    createdDocs[createdDocs.indexOf(scratch)] = `${scratch}-2.indd`;
+    testDoc = `${scratch}-2.indd`;
 
     // Save As to a new name (no confirmation needed for a new file)
-    let out = await call('save_document', { filePath: file });
+    out = await call('save_document', { filePath: file });
     assert(/Save As: the document .* is now named reopen\.indd/.test(out), out);
-    createdDocs[createdDocs.indexOf(scratch)] = 'reopen.indd';
+    createdDocs[createdDocs.indexOf(`${scratch}-2.indd`)] = 'reopen.indd';
     testDoc = 'reopen.indd';
     assert(/reopen\.indd \(ACTIVE\)[^\n]*modified=false path=[^\n]*reopen\.indd/.test(await call('list_open_documents')), 'the saved document shows its path');
 
