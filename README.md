@@ -1,6 +1,6 @@
 # InDesign MCP Server
 
-A comprehensive **Model Context Protocol (MCP) server** for **Adobe InDesign automation** with **108 tools**. This server enables AI assistants like Claude to directly control Adobe InDesign, automating complex publishing workflows, document creation, and professional layout tasks.
+A comprehensive **Model Context Protocol (MCP) server** for **Adobe InDesign automation** with **109 tools**. This server enables AI assistants like Claude to directly control Adobe InDesign, automating complex publishing workflows, document creation, and professional layout tasks.
 
 ## 🚀 Features
 
@@ -219,7 +219,7 @@ One policy (`lib/policy.js`) checks every file argument before a tool runs: path
 ## 🛠️ Tool reference
 
 <!-- TOOLS:START -->
-_108 tools. Generated from the server's tool schemas by `npm run docs`._
+_109 tools. Generated from the server's tool schemas by `npm run docs`._
 
 ### Workflow, review and backups
 
@@ -1231,11 +1231,12 @@ Move an object one step forward in the stacking order
 
 #### `group_objects`
 
-Group objects (by id) and return the group id
+Group objects (by id) and return the group id. name: what the group is ("Pattern strip", "Info box"), shown in the Layers panel and by list_page_items. The objects must be on the same spread.
 
 | Parameter | Type | Description |
 |---|---|---|
 | `ids` *(required)* | number[] | Ids of the objects to group (at least 2) |
+| `name` | string | Name of the group: what it is on the page |
 
 #### `ungroup`
 
@@ -1640,6 +1641,17 @@ Give pages their own size (mm), e.g. one page per web section of a different hei
 | `width` | number | New width in mm (default: unchanged) |
 | `height` | number | New height in mm (default: unchanged) |
 | `anchor` | `top-left` \| `top` \| `top-right` \| `left` \| `center` \| `right` \| `bottom-left` \| `bottom` \| `bottom-right` | Point of the page that stays in place Default: `"top-left"`. |
+
+#### `name_object`
+
+Name an object (any page item, group included) by what it is on the page ("Background", "Headline"): the name shows in the Layers panel, list_page_items and review tables.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `id` | number | Stable object id (from create_* tools, place_image or list_page_items). Preferred. |
+| `pageIndex` | number | Page index (0-based); used with index Default: `0`. |
+| `index` | number | Position in list_page_items for that page (changes when objects are added/reordered) |
+| `name` *(required)* | string | New name ("" removes it) |
 
 <!-- TOOLS:END -->
 

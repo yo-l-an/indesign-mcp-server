@@ -39,6 +39,7 @@ Changes need no further step for their snapshot: before each tool that modifies 
 - Address objects by **id** (stable), from the list of step 2.
 - Text: `find_replace_text({ findText, replaceText, frameId })` for a word or a sentence; `edit_text_frame` with `content` only to rewrite a whole story.
 - Pages: `move_page({ page: "10", after: "3" })`, `add_page`, `delete_page`. Objects to another page: `move_to_page({ id, page: "12" })`.
+- Groups: ids reach objects inside groups, so change a member by its id and leave the document's groups as they are (Groups and names, below).
 - Formatting: apply existing paragraph/character styles. Editing a style changes every page that uses it, so it is a whole-document scope (step 1).
 - Text that no longer fits (`overflows=true` / `OVERSET`): enlarge the frame with `set_object_geometry`, or tell the PM. Type size changes only with the PM's agreement.
 
@@ -134,6 +135,19 @@ For display type matched to a layout (a mock-up, a reference image):
 
 **Done when** the ink bounds of each word sit on their target edges (within 0.5 mm).
 
+### Groups and names
+
+Every layout you build or add is grouped by meaning, as a designer would leave it:
+
+1. When a unit of the page is complete, group it with `group_objects({ ids, name })`. A unit is what moves as one: a headline block (kicker, title, intro), a box (frame lines, pictogram, text), a decorative pattern, a logo.
+2. Name each group by its role on the page, in the PM's language: "Bloc titre", "Encadré", "Motif", "Logo".
+3. Backgrounds, panels and masks that sit under several units stay outside the groups: name them with `name_object` ("Fond", "Panneau").
+4. Check the stacking with `list_page_items`: a group takes the level of its topmost member, so a member that sat under another unit's object ends up above it. Move it back with `send_to_back` / `send_backward` where the page shows the difference.
+
+In a document you correct, the groups are the client's: group only when the PM asks.
+
+**Done when** `list_page_items` shows every object of the new layout either inside a named group or named itself, and `render_preview` matches the page before grouping.
+
 ### Saving and where files go
 
 - **New document**: ask the PM where to save it before `create_document`, then pass that path: `create_document({ preset: "A4", filePath: "~/…/Brochure.indd" })` saves it there right away.
@@ -167,4 +181,4 @@ The server improves through what you learn using it. You may have no push rights
 
 ### New documents
 
-Ask where to save it first (Saving, above). A document built from scratch needs no review while you build it; corrections to it afterwards follow the workflow. Create styles first, then frames with `paragraphStyle`; check with `render_preview` / `measure_text`; export with `export_pdf`. Logos: native paths (`create_path_from_svg`) first, `place_graphic` for .svg/.pdf/.ai/.eps, `create_graphic_from_svg` as the fallback. The full tool reference is in `README.md`.
+Ask where to save it first (Saving, above). A document built from scratch needs no review while you build it; corrections to it afterwards follow the workflow. Create styles first, then frames with `paragraphStyle`; group and name each unit as it is finished (Groups and names, above); check with `render_preview` / `measure_text`; export with `export_pdf`. Logos: native paths (`create_path_from_svg`) first, `place_graphic` for .svg/.pdf/.ai/.eps, `create_graphic_from_svg` as the fallback. The full tool reference is in `README.md`.

@@ -167,11 +167,27 @@ export function createExtraTools(ctx) {
     {
       name: 'group_objects',
       modifies: true,
-      description: 'Group objects (by id) and return the group id',
+      description: 'Group objects (by id) and return the group id. name: what the group is ("Pattern strip", "Info box"), shown in the Layers panel and by list_page_items. The objects must be on the same spread.',
       inputSchema: {
         type: 'object',
-        properties: { ids: { type: 'array', items: { type: 'number' }, description: 'Ids of the objects to group (at least 2)' } },
+        properties: {
+          ids: { type: 'array', items: { type: 'number' }, description: 'Ids of the objects to group (at least 2)' },
+          name: { type: 'string', description: 'Name of the group: what it is on the page' },
+        },
         required: ['ids'],
+      },
+    },
+    {
+      name: 'name_object',
+      modifies: true,
+      description: 'Name an object (any page item, group included) by what it is on the page ("Background", "Headline"): the name shows in the Layers panel, list_page_items and review tables.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          ...OBJECT_PROPS,
+          name: { type: 'string', description: 'New name ("" removes it)' },
+        },
+        required: ['name'],
       },
     },
     {
@@ -260,6 +276,7 @@ export function createExtraTools(ctx) {
           var it = items[i];
           if (wanted && it.constructor.name !== wanted) continue;
           var line = "[" + i + "] " + __describe(it);
+          try { if (it.name && it.name.charAt(0) !== "<") line += " name=" + JSON_STR(it.name); } catch (e) {}
           try { if (it.parent && it.parent.constructor.name === "Group") line += " group=" + it.parent.id; } catch (e) {}
           out.push(line);
           shown++;
@@ -421,10 +438,28 @@ export function createExtraTools(ctx) {
           if (!it) throw new Error("No object with id " + ids[i]);
           items.push(it);
         }
+        var spread = items[0].parent;
+        try { while (spread && !(spread instanceof Spread) && !(spread instanceof MasterSpread)) spread = spread.parent; } catch (e) {}
+        for (var k = 1; k < items.length; k++) {
+          var sp = items[k].parent;
+          try { while (sp && !(sp instanceof Spread) && !(sp instanceof MasterSpread)) sp = sp.parent; } catch (e) {}
+          if (sp !== spread) throw new Error("Objects " + ids[0] + " and " + ids[k] + " are on different spreads: group the objects of one spread");
+        }
         var g = doc.groups.add(items);
-        "Grouped " + items.length + " objects: " + __describe(g);
+        ${has(args.name) ? `g.name = ${jsStr(args.name)};` : ''}
+        "Grouped " + items.length + " objects: " + __describe(g)${has(args.name) ? ` + " name=" + g.name` : ''};
       `;
       return respond(await run(script), 'Group Objects');
+    },
+
+    async name_object(args) {
+      const script = `
+        var doc = __requireDoc();
+        var it = ${objExpr(args)};
+        it.name = ${jsStr(args.name)};
+        "Named \\"" + it.name + "\\": " + __describe(it);
+      `;
+      return respond(await run(script), 'Name Object');
     },
 
     async ungroup(args) {

@@ -82,3 +82,13 @@ test('set_page_size and add_page give pages their own size', async () => {
     assert.ok(error, `accepted ${JSON.stringify(args)}`);
   }
 });
+
+test('group_objects names the group and checks the spread; name_object names any object', async () => {
+  const g = await ok('group_objects', { ids: [3, 4], name: 'Info box' });
+  assert.match(g, /g\.name = "Info box";/);
+  assert.match(g, /are on different spreads/);
+  assert.doesNotMatch(await ok('group_objects', { ids: [3, 4] }), /g\.name =/);
+  assert.match(await ok('name_object', { id: 9, name: 'Background' }), /it\.name = "Background";/);
+  const { error } = await runTool('name_object', { id: 9 });
+  assert.ok(error);
+});
