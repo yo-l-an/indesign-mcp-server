@@ -65,7 +65,7 @@ test('set_text_frame_options: auto-size keeps the top-left corner unless told ot
   const dflt = await ok('set_text_frame_options', { id: 3, autosize: 'HEIGHT_AND_WIDTH' });
   assert.ok(dflt.indexOf('TOP_LEFT_POINT') > 0 && dflt.indexOf('TOP_LEFT_POINT') < dflt.indexOf('autoSizingType'));
   assert.match(await ok('set_text_frame_options', { id: 3, autosize: 'WIDTH_ONLY', autosizeReference: 'center' }), /AutoSizingReferenceEnum\.CENTER_POINT/);
-  assert.doesNotMatch(await ok('set_text_frame_options', { id: 3, autosize: 'OFF' }), /autoSizingReferencePoint/);
+  assert.doesNotMatch(await ok('set_text_frame_options', { id: 3, autosize: 'OFF' }), /autoSizingReferencePoint =/);
   assert.match(await ok('set_text_frame_options', { id: 3, autosizeReference: 'bottom-right' }), /BOTTOM_RIGHT_POINT/);
 });
 

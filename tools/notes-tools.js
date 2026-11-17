@@ -27,6 +27,34 @@ they changed locally. For the author of the project, who chooses the real implem
 Each entry: kind, status (wanted / fixed-locally / workaround-found), the tool, the files changed.
 `;
 
+// Append one note to NOTES.md; returns { n, file }
+export function appendNote(args) {
+  const file = notesPath();
+  const status = args.status || 'wanted';
+  if (status === 'fixed-locally' && !(args.filesChanged || []).length) {
+    throw new Error('status fixed-locally needs filesChanged: every file you changed, with what changed');
+  }
+  const existing = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+  const n = (existing.match(/^## N\d+/gm) || []).length + 1;
+  const d = new Date();
+  const when = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  const lines = [
+    '',
+    `## N${n} – ${args.kind} – ${String(args.title).replace(/\s+/g, ' ').trim()}`,
+    '',
+    `- Date: ${when} · server ${version()}`,
+    `- Status: ${status}`,
+    ...(args.tool ? [`- Tool: \`${args.tool}\``] : []),
+    ...((args.filesChanged || []).length ? ['- Files changed:', ...args.filesChanged.map((f) => `  - ${f}`)] : []),
+    '',
+    String(args.details).trim(),
+    '',
+  ];
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.appendFileSync(file, (existing ? '' : HEADER) + lines.join('\n'), 'utf8');
+  return { n, file, status };
+}
+
 export function createNotesTools() {
   const definitions = [
     {
@@ -56,29 +84,7 @@ export function createNotesTools() {
 
   const handlers = {
     add_improvement_note: async (args) => {
-      const file = notesPath();
-      const status = args.status || 'wanted';
-      if (status === 'fixed-locally' && !(args.filesChanged || []).length) {
-        throw new Error('status fixed-locally needs filesChanged: every file you changed, with what changed');
-      }
-      const existing = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
-      const n = (existing.match(/^## N\d+/gm) || []).length + 1;
-      const d = new Date();
-      const when = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-      const lines = [
-        '',
-        `## N${n} – ${args.kind} – ${String(args.title).replace(/\s+/g, ' ').trim()}`,
-        '',
-        `- Date: ${when} · server ${version()}`,
-        `- Status: ${status}`,
-        ...(args.tool ? [`- Tool: \`${args.tool}\``] : []),
-        ...((args.filesChanged || []).length ? ['- Files changed:', ...args.filesChanged.map((f) => `  - ${f}`)] : []),
-        '',
-        String(args.details).trim(),
-        '',
-      ];
-      fs.mkdirSync(path.dirname(file), { recursive: true });
-      fs.appendFileSync(file, (existing ? '' : HEADER) + lines.join('\n'), 'utf8');
+      const { n, file, status } = appendNote(args);
       return { content: [{ type: 'text', text: `Note N${n} written to ${file}.\nBefore you finish, tell the user in one short paragraph: improvements to the server are needed, you wrote them in NOTES.md${status === 'fixed-locally' ? ' (with the local fixes you made)' : ''}, and the notes are ready to be given to the author of the project.` }] };
     },
     read_improvement_notes: async () => {

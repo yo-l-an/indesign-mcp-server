@@ -17,6 +17,11 @@ const AUTOSIZE_REFERENCES = {
   'bottom-left': 'BOTTOM_LEFT_POINT', bottom: 'BOTTOM_CENTER_POINT', 'bottom-right': 'BOTTOM_RIGHT_POINT',
 };
 
+// set_text_frame_options: first baseline -> FirstBaseline, wrap side -> TextWrapSideOptions
+const FIRST_BASELINE = { cap_height: 'CAP_HEIGHT', x_height: 'X_HEIGHT', ascent: 'ASCENT_OFFSET', leading: 'LEADING_OFFSET', em_box: 'EMBOX_HEIGHT', fixed: 'FIXED_HEIGHT' };
+const WRAP_SIDES = { both: 'BOTH_SIDES', left: 'LEFT_SIDE', right: 'RIGHT_SIDE', towards_spine: 'SIDE_TOWARDS_SPINE', away_from_spine: 'SIDE_AWAY_FROM_SPINE', largest_area: 'LARGEST_AREA' };
+const GRID_FROM = { inset: 'TOP_OF_INSET', frame: 'TOP_OF_FRAME', margin: 'TOP_OF_MARGIN', page: 'TOP_OF_PAGE' };
+
 const OBJECT_PROPS = {
   id: { type: 'number', description: 'Stable object id (from create_* tools, place_image or list_page_items). Preferred.' },
   pageIndex: { type: 'number', description: 'Page index (0-based); used with index', default: 0 },
@@ -144,7 +149,7 @@ export function createExtraTools(ctx) {
     {
       name: 'set_text_frame_options',
       modifies: true,
-      description: 'Set text frame options: insets (mm), vertical alignment, columns, auto-size and text wrap (wrap also works on other objects so text flows around them).',
+      description: 'Text frame options (Object > Text Frame Options): insets per side, first baseline (cap height for titles and small text, so the frame top is the top of the capitals), vertical alignment, columns (fixed or flexible width, balanced, column rule), auto-size (with its anchor point and no line breaks), its own baseline grid, ignore text wrap; and text wrap on any object. A frame with rounded or fancy corners keeps one inset for all four sides.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -154,13 +159,31 @@ export function createExtraTools(ctx) {
           insetLeft: { type: 'number', description: 'Left inset in mm' },
           insetBottom: { type: 'number', description: 'Bottom inset in mm' },
           insetRight: { type: 'number', description: 'Right inset in mm' },
-          verticalAlignment: { type: 'string', enum: ['TOP', 'CENTER', 'BOTTOM', 'JUSTIFY'] },
+          firstBaseline: { type: 'string', enum: Object.keys(FIRST_BASELINE), description: 'Where the first line sits: cap_height (top of the frame = top of the capitals: titles, labels, aligning text on a grid line), x_height, ascent (default of InDesign), leading (first line on the baseline grid), em_box, fixed (= firstBaselineMin)' },
+          firstBaselineMin: { type: 'number', description: 'Minimum first-baseline offset in mm (the offset itself with firstBaseline: fixed)' },
+          verticalAlignment: { type: 'string', enum: ['TOP', 'CENTER', 'BOTTOM', 'JUSTIFY'], description: 'Vertical alignment of the text in the frame' },
           columns: { type: 'number', description: 'Number of columns' },
           columnGutter: { type: 'number', description: 'Column gutter in mm' },
-          autosize: { type: 'string', enum: ['OFF', 'HEIGHT_ONLY', 'WIDTH_ONLY', 'HEIGHT_AND_WIDTH', 'HEIGHT_AND_WIDTH_PROPORTIONALLY'], description: 'Auto-sizing type' },
-          autosizeReference: { type: 'string', enum: Object.keys(AUTOSIZE_REFERENCES), description: 'Point of the frame that stays in place when auto-size resizes it (default with autosize: top-left, so the frame keeps its x / y)' },
+          columnWidth: { type: 'number', description: 'Fixed column width in mm (the frame width follows the columns)' },
+          columnMaxWidth: { type: 'number', description: 'Flexible columns: maximum column width in mm (columns are added as the frame widens); 0 turns it off' },
+          balanceColumns: { type: 'boolean', description: 'Balance the text across the columns' },
+          columnRule: { type: 'boolean', description: 'A vertical rule between columns' },
+          columnRuleWeight: { type: 'number', description: 'Column rule weight in pt' },
+          columnRuleColor: { type: 'string', description: 'Column rule swatch' },
+          autosize: { type: 'string', enum: ['OFF', 'HEIGHT_ONLY', 'WIDTH_ONLY', 'HEIGHT_AND_WIDTH', 'HEIGHT_AND_WIDTH_PROPORTIONALLY'], description: 'Auto-sizing type. With a width (WIDTH_ONLY, HEIGHT_AND_WIDTH…) "no line breaks" is turned on, or the text would wrap word by word' },
+          autosizeReference: { type: 'string', enum: Object.keys(AUTOSIZE_REFERENCES), description: 'Point that stays in place when auto-size resizes the frame: match the alignment (left-aligned text: top-left or left; centred: top or center; right-aligned: top-right or right; text standing on a line: bottom-…). Default: top-left' },
+          autosizeMinHeight: { type: 'number', description: 'Auto-size never makes the frame shorter than this (mm); 0 turns it off' },
+          autosizeMinWidth: { type: 'number', description: 'Auto-size never makes the frame narrower than this (mm); 0 turns it off' },
+          noLineBreaks: { type: 'boolean', description: 'Auto-size grows the width instead of breaking lines (on by default when auto-size changes the width)' },
+          baselineGrid: { type: 'string', enum: ['document', 'custom'], description: 'custom: the frame has its own baseline grid (a sidebar on another leading)' },
+          baselineGridIncrement: { type: 'number', description: 'Own baseline grid: increment in pt' },
+          baselineGridStart: { type: 'number', description: 'Own baseline grid: start in mm' },
+          baselineGridRelativeTo: { type: 'string', enum: ['inset', 'frame', 'margin', 'page'], description: 'Own baseline grid: start measured from the top inset, the frame, the top margin or the page' },
+          ignoreWrap: { type: 'boolean', description: 'Text in this frame ignores the text wrap of other objects' },
           textWrap: { type: 'string', enum: ['NONE', 'BOUNDING_BOX', 'CONTOUR', 'JUMP_OBJECT', 'NEXT_COLUMN'], description: 'How text wraps around this object' },
           textWrapOffset: { type: 'number', description: 'Text wrap offset on all sides in mm' },
+          textWrapOffsets: { type: 'array', items: { type: 'number' }, description: 'Text wrap offsets [top, left, bottom, right] in mm' },
+          textWrapSide: { type: 'string', enum: Object.keys(WRAP_SIDES), description: 'Which side the text flows on' },
         },
       },
     },
@@ -379,13 +402,68 @@ export function createExtraTools(ctx) {
       const lines = [];
       const insetAll = has(args.inset) ? jsNum(args.inset, 'inset') : null;
       const sides = { insetTop: 0, insetLeft: 1, insetBottom: 2, insetRight: 3 };
+      const notes = [];
       if (insetAll !== null || Object.keys(sides).some((k) => has(args[k]))) {
-        lines.push('var ins = tf.textFramePreferences.insetSpacing; if (!(ins instanceof Array)) ins = [ins, ins, ins, ins]; ins = [ins[0], ins[1], ins[2], ins[3]];');
+        lines.push('var ins = tf.textFramePreferences.insetSpacing, oneInset = !(ins instanceof Array); if (oneInset) ins = [ins, ins, ins, ins]; ins = [ins[0], ins[1], ins[2], ins[3]];');
         if (insetAll !== null) lines.push(`ins = [${insetAll}, ${insetAll}, ${insetAll}, ${insetAll}];`);
         for (const [k, i] of Object.entries(sides)) {
           if (has(args[k])) lines.push(`ins[${i}] = ${jsNum(args[k], k)};`);
         }
-        lines.push('tf.textFramePreferences.insetSpacing = ins;');
+        // A frame with rounded / fancy corners (or not rectangular) keeps one inset for all sides:
+        // InDesign would silently keep the first value only
+        lines.push(`if (oneInset) { var one = Math.max(ins[0], ins[1], ins[2], ins[3]); tf.textFramePreferences.insetSpacing = one; if (ins[0] !== ins[1] || ins[1] !== ins[2] || ins[2] !== ins[3]) __notes.push("corners not square: one inset for all sides, " + __r(one) + " mm (the largest asked)"); } else tf.textFramePreferences.insetSpacing = ins;`);
+      }
+      if (has(args.firstBaseline)) {
+        const fb = FIRST_BASELINE[args.firstBaseline];
+        if (!fb) throw new Error(`Invalid firstBaseline: ${args.firstBaseline}`);
+        lines.push(`tf.textFramePreferences.firstBaselineOffset = FirstBaseline.${fb};`);
+      }
+      if (has(args.firstBaselineMin)) lines.push(`tf.textFramePreferences.minimumFirstBaselineOffset = ${jsNum(args.firstBaselineMin, 'firstBaselineMin')};`);
+      if (has(args.columnWidth)) lines.push(`tf.textFramePreferences.useFixedColumnWidth = true; tf.textFramePreferences.textColumnFixedWidth = ${jsNum(args.columnWidth, 'columnWidth')};`);
+      if (has(args.columnMaxWidth)) {
+        const w = jsNum(args.columnMaxWidth, 'columnMaxWidth');
+        lines.push(w > 0 ? `tf.textFramePreferences.useFlexibleColumnWidth = true; tf.textFramePreferences.textColumnMaxWidth = ${w};` : 'tf.textFramePreferences.useFlexibleColumnWidth = false;');
+      }
+      if (has(args.balanceColumns)) lines.push(`tf.textFramePreferences.verticalBalanceColumns = ${args.balanceColumns ? 'true' : 'false'};`);
+      if (has(args.columnRule)) lines.push(`tf.textFramePreferences.columnRuleOverride = ${args.columnRule ? 'true' : 'false'};`);
+      if (has(args.columnRuleWeight)) lines.push(`tf.textFramePreferences.columnRuleOverride = true; tf.textFramePreferences.columnRuleStrokeWidth = ${jsNum(args.columnRuleWeight, 'columnRuleWeight')};`);
+      if (has(args.columnRuleColor)) lines.push(`tf.textFramePreferences.columnRuleOverride = true; tf.textFramePreferences.columnRuleStrokeColor = __swatch(doc, ${jsStr(args.columnRuleColor)});`);
+      if (has(args.ignoreWrap)) lines.push(`tf.textFramePreferences.ignoreWrap = ${args.ignoreWrap ? 'true' : 'false'};`);
+      if (has(args.baselineGrid) || has(args.baselineGridIncrement) || has(args.baselineGridStart) || has(args.baselineGridRelativeTo)) {
+        const custom = args.baselineGrid !== 'document';
+        lines.push(`tf.baselineFrameGridOptions.useCustomBaselineFrameGrid = ${custom ? 'true' : 'false'};`);
+        if (custom) {
+          if (has(args.baselineGridIncrement)) lines.push(`tf.baselineFrameGridOptions.baselineFrameGridIncrement = "${jsNum(args.baselineGridIncrement, 'baselineGridIncrement')}pt";`);
+          if (has(args.baselineGridStart)) lines.push(`tf.baselineFrameGridOptions.startingOffsetForBaselineFrameGrid = ${jsNum(args.baselineGridStart, 'baselineGridStart')};`);
+          if (has(args.baselineGridRelativeTo)) {
+            const g = GRID_FROM[args.baselineGridRelativeTo];
+            if (!g) throw new Error(`Invalid baselineGridRelativeTo: ${args.baselineGridRelativeTo}`);
+            lines.push(`tf.baselineFrameGridOptions.baselineFrameGridRelativeOption = BaselineFrameGridRelativeOption.${g};`);
+          }
+        }
+      }
+      if (has(args.autosizeMinHeight)) {
+        const h = jsNum(args.autosizeMinHeight, 'autosizeMinHeight');
+        lines.push(h > 0 ? `tf.textFramePreferences.useMinimumHeightForAutoSizing = true; tf.textFramePreferences.minimumHeightForAutoSizing = ${h};` : 'tf.textFramePreferences.useMinimumHeightForAutoSizing = false;');
+      }
+      if (has(args.autosizeMinWidth)) {
+        const w = jsNum(args.autosizeMinWidth, 'autosizeMinWidth');
+        lines.push(w > 0 ? `tf.textFramePreferences.useMinimumWidthForAutoSizing = true; tf.textFramePreferences.minimumWidthForAutoSizing = ${w};` : 'tf.textFramePreferences.useMinimumWidthForAutoSizing = false;');
+      }
+      // Auto-size that changes the width must not break lines, or the text wraps word by word
+      const widthAuto = ['WIDTH_ONLY', 'HEIGHT_AND_WIDTH', 'HEIGHT_AND_WIDTH_PROPORTIONALLY'].includes(args.autosize);
+      if (has(args.noLineBreaks)) lines.push(`tf.textFramePreferences.useNoLineBreaksForAutoSizing = ${args.noLineBreaks ? 'true' : 'false'};`);
+      else if (widthAuto) lines.push('tf.textFramePreferences.useNoLineBreaksForAutoSizing = true;');
+      if (args.noLineBreaks === false && widthAuto) notes.push('auto-size changes the width without "no line breaks": the text may wrap word by word');
+      if (has(args.textWrapOffsets)) {
+        const o = (args.textWrapOffsets || []).map((v) => jsNum(v, 'textWrapOffsets'));
+        if (o.length !== 4) throw new Error('textWrapOffsets: [top, left, bottom, right] in mm');
+        lines.push(`tf.textWrapPreferences.textWrapOffset = [${o.join(', ')}];`);
+      }
+      if (has(args.textWrapSide)) {
+        const s = WRAP_SIDES[args.textWrapSide];
+        if (!s) throw new Error(`Invalid textWrapSide: ${args.textWrapSide}`);
+        lines.push(`tf.textWrapPreferences.textWrapSide = TextWrapSideOptions.${s};`);
       }
       if (has(args.verticalAlignment)) {
         const map = { TOP: 'TOP_ALIGN', CENTER: 'CENTER_ALIGN', BOTTOM: 'BOTTOM_ALIGN', JUSTIFY: 'JUSTIFY_ALIGN' };
@@ -420,8 +498,18 @@ export function createExtraTools(ctx) {
       const script = `
         var doc = __requireDoc();
         var tf = ${objExpr(args)};
+        var __notes = ${jsJson(notes)};
+        var __isText = tf.constructor.name === "TextFrame";
+        if (!__isText && ${lines.some((l) => /textFramePreferences|baselineFrameGridOptions/.test(l)) ? 'true' : 'false'}) throw new Error("Object " + tf.id + " is a " + tf.constructor.name + ": text frame options need a text frame (text wrap works on any object)");
         ${lines.join('\n        ')}
-        "Options updated: " + __describe(tf);
+        var __fp = __isText ? tf.textFramePreferences : null, __sum = "";
+        if (__fp) {
+          var __ins = __fp.insetSpacing;
+          __sum = " | insets " + (__ins instanceof Array ? __r(__ins[0]) + "/" + __r(__ins[1]) + "/" + __r(__ins[2]) + "/" + __r(__ins[3]) : __r(__ins)) + " mm, first baseline " + String(__fp.firstBaselineOffset).toLowerCase() +
+            ", auto-size " + String(__fp.autoSizingType).toLowerCase() + (String(__fp.autoSizingType) !== "OFF" ? " from " + String(__fp.autoSizingReferencePoint).toLowerCase().replace("_point", "") + (__fp.useNoLineBreaksForAutoSizing ? ", no line breaks" : "") : "") +
+            ", " + __fp.textColumnCount + " column(s)" + (tf.baselineFrameGridOptions.useCustomBaselineFrameGrid ? ", own baseline grid" : "") + (tf.overflows ? " – OVERSET" : "");
+        }
+        "Options updated: " + __describe(tf) + __sum + (__notes.length ? "\\nNote: " + __notes.join("; ") : "");
       `;
       return respond(await run(script), 'Set Text Frame Options');
     },
