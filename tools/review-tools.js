@@ -24,6 +24,8 @@ const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const GUIDE_PATH = path.join(ROOT, 'GUIDE.md');
 // Settings no tool reaches, with their menu paths (served on demand: get_usage_guide topic manual-settings)
 export const MANUAL_SETTINGS_PATH = path.join(ROOT, 'docs', 'MANUAL-SETTINGS.md');
+// Building a layout: kickstart, setup, masters, folios, text frames, grid, groups, alternate layouts (topic layout)
+export const LAYOUT_GUIDE_PATH = path.join(ROOT, 'docs', 'LAYOUT-GUIDE.md');
 export const BACKUP_FOLDER_NAME = 'InDesign Agent Backups';
 const REVIEW_ROOT_NAME = 'indesign-mcp-review';
 const REVIEW_MAX_AGE_MS = 3 * 24 * 3600 * 1000;
@@ -477,8 +479,8 @@ export function createReviewTools(ctx) {
     {
       name: 'get_usage_guide',
       modifies: false,
-      description: 'Workflow guide: read once per session, before the first change to a document. Five steps (scope, prepare_edit, surgical change, review_compare, close) plus page names, ids, backups, saving, new documents (kickstart questions), masters, layouts, errors and improvement notes. topic "manual-settings": the settings no tool reaches, with the menu path to give the user.',
-      inputSchema: { type: 'object', properties: { topic: { type: 'string', enum: ['workflow', 'manual-settings'], description: 'workflow (default): the guide; manual-settings: settings the user changes by hand, with their menu path', default: 'workflow' } } },
+      description: 'Workflow guide: read once per session, before the first change to a document. Five steps (scope, prepare_edit, surgical change, review_compare, close), page names, ids, client files, review output, backups, saving, errors, improvement notes. topic "layout": building a layout (new document kickstart, setup, grids, masters, folios, spreads, text frames, alignment, groups, alternate layouts). topic "manual-settings": settings no tool reaches, with the menu path to give the user.',
+      inputSchema: { type: 'object', properties: { topic: { type: 'string', enum: ['workflow', 'layout', 'manual-settings'], description: 'workflow (default): the correction workflow; layout: building a layout; manual-settings: settings the user changes by hand, with their menu path', default: 'workflow' } } },
     },
     {
       name: 'find_text',
@@ -599,6 +601,7 @@ export function createReviewTools(ctx) {
 
   handlers.get_usage_guide = async (args = {}) => {
     if (args.topic === 'manual-settings') return { content: [{ type: 'text', text: fs.readFileSync(MANUAL_SETTINGS_PATH, 'utf8') }] };
+    if (args.topic === 'layout') return { content: [{ type: 'text', text: fs.readFileSync(LAYOUT_GUIDE_PATH, 'utf8') }] };
     ctx.workflow.guideRead = true;
     return { content: [{ type: 'text', text: readGuide() }] };
   };

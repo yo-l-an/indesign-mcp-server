@@ -136,7 +136,8 @@ Set these in the `env` block of the client configuration. All are optional.
 
 ## Documentation
 
-- [GUIDE.md](GUIDE.md): the workflow agents follow.
+- [GUIDE.md](GUIDE.md): the correction workflow agents follow.
+- [docs/LAYOUT-GUIDE.md](docs/LAYOUT-GUIDE.md): how agents build a layout (kickstart questions, grids, masters, folios, alternate layouts); served through `get_usage_guide({ topic: "layout" })`.
 - [docs/TOOLS.md](docs/TOOLS.md): units and coordinates, colour, saving, every tool, known limits.
 - [docs/MANUAL-SETTINGS.md](docs/MANUAL-SETTINGS.md): the settings no tool reaches, with their menu path (French and English); agents read it through `get_usage_guide({ topic: "manual-settings" })`.
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md): how scripts run, debugging, tests, troubleshooting.

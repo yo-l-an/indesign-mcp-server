@@ -74,11 +74,11 @@ _141 tools. Generated from the server's tool schemas by `npm run docs`._
 
 #### `get_usage_guide`
 
-Workflow guide: read once per session, before the first change to a document. Five steps (scope, prepare_edit, surgical change, review_compare, close) plus page names, ids, backups, saving, new documents (kickstart questions), masters, layouts, errors and improvement notes. topic "manual-settings": the settings no tool reaches, with the menu path to give the user.
+Workflow guide: read once per session, before the first change to a document. Five steps (scope, prepare_edit, surgical change, review_compare, close), page names, ids, client files, review output, backups, saving, errors, improvement notes. topic "layout": building a layout (new document kickstart, setup, grids, masters, folios, spreads, text frames, alignment, groups, alternate layouts). topic "manual-settings": settings no tool reaches, with the menu path to give the user.
 
 | Parameter | Type | Description |
 |---|---|---|
-| `topic` | `workflow` \| `manual-settings` | workflow (default): the guide; manual-settings: settings the user changes by hand, with their menu path Default: `"workflow"`. |
+| `topic` | `workflow` \| `layout` \| `manual-settings` | workflow (default): the correction workflow; layout: building a layout; manual-settings: settings the user changes by hand, with their menu path Default: `"workflow"`. |
 
 #### `prepare_edit`
 
