@@ -30,6 +30,8 @@ prepare_edit({ pages: ["12"], reason: "correction prix p12" })
 
 One call makes the backup, the BEFORE snapshot of the scope, and lists every object of the scope with its id, position, styles and text. Work from this list; reach for `list_page_items`, `get_object_info` or `get_text_content` only for a detail it lacks. Pass `listObjects: false` when you already know the ids.
 
+Changes need no further step for their snapshot: before each tool that modifies an existing document, the server adds the pages it touches to the BEFORE (an object's page, a `pageIndex`, else the page shown in InDesign) and makes the task's backup if none exists yet. The tool result then carries an `Auto snapshot` line. `prepare_edit` stays the way to start a task: it names the reason, lists the objects and covers whole-document scopes (`allPages`). Documents created in this session get no backup or snapshot.
+
 **Done when** the result shows a backup path and a `snapshotId`.
 
 ### 3. Change surgically
@@ -49,9 +51,9 @@ review_compare()                   // few changes
 review_compare({ maxImages: 1 })   // many changes: the table carries them
 ```
 
-Show the PM the image(s) and the change table, then report in three short parts: **what changed**, **the review**, **open points** (anything not done or not checked).
+The images in the tool result reach you only. Send the PM the files listed on the `Images to show the user` line with your client's file-sharing tool (for example `SendUserFile`), and put the change table in your message. Then report in three short parts: **what changed**, **the review**, **open points** (anything not done or not checked).
 
-**Done when** the PM has the images and the table, and every table row matches something they asked for. A row they did not ask for is a side effect: fix it, or explain it in the open points. With client feedback: every feedback number is done or listed in the open points.
+**Done when** the PM has the image files in the conversation and the table, and every table row matches something they asked for. A row they did not ask for is a side effect: fix it, or explain it in the open points. With client feedback: every feedback number is done or listed in the open points.
 
 ### 5. Close the task
 
@@ -96,7 +98,7 @@ Send the PM one message: the counts, then the questions by number, each with the
 - **Move image** (when objects changed page): source page BEFORE | destination page AFTER, an arrow from each object to where it landed. The destination page is found even outside the scope.
 - After a renumbering, a "Visuel" zone on a page's folio is the page number changing; the table says so.
 - Identical changes on many objects share one table row; `report.html` keeps one row per object and every image.
-- Review files are temporary, in `$TMPDIR/indesign-mcp-review/` (removed after 3 days). Attach `report.html` or the PNGs to the conversation when the PM wants to keep or share the review; the repository and the InDesign folder stay free of them.
+- Review files are temporary, in `$TMPDIR/indesign-mcp-review/` (about 200 KB per page; removed after 3 days, at most 30 snapshots kept). Attach `report.html` or the PNGs to the conversation when the PM wants to keep or share the review; the repository and the InDesign folder stay free of them.
 - "Visuel" rows are pixel changes no object explains (style definition, relinked image, master page): name the likely cause in the open points.
 
 ### Change table template

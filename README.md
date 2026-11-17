@@ -62,8 +62,9 @@ review_compare()                                                  // images + ch
 - **Client files** first: `read_feedback({ path, locate: true })` for a commented PDF or Word file, `read_source_document({ path, outline: true })` for a brief; unclear items go to the project manager before any change.
 - **Pages** are addressed as the project manager names them (page names shown in InDesign); `"+N"` = N-th page of the file.
 - **Backups**: `<document>__YYYY-MM-DD_HHhMMmSS__<reason>.indd` in `InDesign Agent Backups/` next to the document (`INDESIGN_BACKUP_DIR` overrides). Documents converted from an older InDesign version are backed up next to their original file; documents never saved into `~/Documents/InDesign Agent Backups/`.
-- **Review files** live in `$TMPDIR/indesign-mcp-review/` (removed after 3 days), never in the repository or the document folder.
-- A modifying tool called before any `prepare_edit` in a session gets a one-line reminder once (`INDESIGN_WORKFLOW_REMINDERS=0` turns it off).
+- **Automatic snapshot**: before a tool modifies an existing document, the pages it touches join the BEFORE snapshot, with one backup per document per session, so `review_compare` always has a "before". Documents created in the session are skipped; `INDESIGN_AUTO_SNAPSHOT=0` turns it off.
+- **Review files** live in `$TMPDIR/indesign-mcp-review/` (about 200 KB per page; removed after 3 days, at most 30 snapshots kept), never in the repository or the document folder. `review_compare` lists its image files so the agent can show them in the conversation.
+- A modifying tool with no snapshot (a document created in the session, or the automatic snapshot off) gets a one-line reminder once (`INDESIGN_WORKFLOW_REMINDERS=0` turns it off).
 
 ## 📋 Prerequisites
 

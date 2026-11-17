@@ -425,10 +425,12 @@ export function createDocumentTools(ctx) {
         doc.save(target);
         var saved = "saved as " + doc.fullName.fsName;` : `var saved = "not saved yet: ask the user where to save it, then save_document({ filePath })";`}
         "Document created: " + doc.name + " - " + ${this.jsStr(preset)} + " (" + __r(doc.documentPreferences.pageWidth) + " x " + __r(doc.documentPreferences.pageHeight) + " mm), " +
-        doc.pages.length + " pages, " + (doc.documentPreferences.facingPages ? "facing pages" : "single pages") + "; " + saved;
+        doc.pages.length + " pages, " + (doc.documentPreferences.facingPages ? "facing pages" : "single pages") + "; " + saved + "\\nDOCID " + doc.id;
       `;
 
-      const result = await this.run(script);
+      // A document built in this session gets no automatic backup / snapshot (lib: review-tools autoSnapshot)
+      const [result, docId] = String(await this.run(script)).split('\nDOCID ');
+      if (docId && this.workflow?.createdDocIds) this.workflow.createdDocIds.add(Number(docId));
       return this.respond(result, "Create Document");
     },
 

@@ -17,6 +17,8 @@ const ROOT = path.resolve(HERE, '..');
 let cached = null;
 
 // Notes written by tools during tests stay out of the repository
+// The automatic snapshot (an extra script before each modifying tool) has its own test
+process.env.INDESIGN_AUTO_SNAPSHOT ??= '0';
 process.env.INDESIGN_NOTES_PATH = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'indesign-mcp-notes-')), 'NOTES.md');
 
 /** Load the server once, with script execution stubbed out. */

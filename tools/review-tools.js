@@ -25,6 +25,7 @@ export const GUIDE_PATH = path.join(ROOT, 'GUIDE.md');
 export const BACKUP_FOLDER_NAME = 'InDesign Agent Backups';
 const REVIEW_ROOT_NAME = 'indesign-mcp-review';
 const REVIEW_MAX_AGE_MS = 3 * 24 * 3600 * 1000;
+const REVIEW_MAX_CASES = 30;   // snapshots kept at most (a one-page snapshot with its review: ~200 KB)
 const MAX_PAGES = 200;
 
 const pad2 = (n) => String(n).padStart(2, '0');
@@ -284,14 +285,24 @@ export function createReviewTools(ctx) {
   const { run } = ctx;
   const reviewRoot = () => path.join(os.tmpdir(), REVIEW_ROOT_NAME);
   ctx.workflow = ctx.workflow || { guideRead: false, backups: new Set(), lastSnapshot: null };
+  // snapshots: document key -> snapshotId (explicit or automatic); createdDocIds: documents built in this session
+  ctx.workflow.snapshots ||= new Map();
+  ctx.workflow.createdDocIds ||= new Set();
+  const docKey = (doc) => doc.filePath || doc.name;
 
+  // Review folders older than 3 days go, and only the newest REVIEW_MAX_CASES are kept;
+  // the snapshots this session still compares against always stay
   const pruneReviews = () => {
     try {
       const cutoff = Date.now() - REVIEW_MAX_AGE_MS;
-      for (const d of fs.readdirSync(reviewRoot())) {
-        const p = path.join(reviewRoot(), d);
-        if (fs.statSync(p).mtimeMs < cutoff) fs.rmSync(p, { recursive: true, force: true });
-      }
+      const inUse = new Set([ctx.workflow.lastSnapshot, ...ctx.workflow.snapshots.values()]);
+      const cases = fs.readdirSync(reviewRoot())
+        .filter((d) => !inUse.has(d))
+        .map((d) => ({ p: path.join(reviewRoot(), d), t: fs.statSync(path.join(reviewRoot(), d)).mtimeMs }))
+        .sort((a, b) => b.t - a.t);
+      cases.forEach((c, i) => {
+        if (c.t < cutoff || i >= REVIEW_MAX_CASES) fs.rmSync(c.p, { recursive: true, force: true });
+      });
     } catch { /* best effort */ }
   };
 
@@ -363,9 +374,9 @@ export function createReviewTools(ctx) {
     try { conv = doc.converted; } catch (e) {}
     if (__hasFile(doc)) p = doc.fullName.fsName;
     else { try { var fp = doc.filePath; if (fp) p = fp.fsName + "/" + doc.name.replace(/\\s*\\[[^\\]]*\\]$/, ""); } catch (e) {} }
-    doc.name + "\\n" + p + "\\n" + (doc.modified ? "1" : "0") + "\\n" + (conv ? "1" : "0");
+    doc.name + "\\n" + p + "\\n" + (doc.modified ? "1" : "0") + "\\n" + (conv ? "1" : "0") + "\\n" + doc.id;
   `;
-  const docFrom = ([name, filePath, modified, converted]) => ({ name, filePath: filePath && fs.existsSync(filePath) ? filePath : null, modified: modified === '1', converted: converted === '1' });
+  const docFrom = ([name, filePath, modified, converted, id]) => ({ name, filePath: filePath && fs.existsSync(filePath) ? filePath : null, modified: modified === '1', converted: converted === '1', id: Number(id) });
   const activeDoc = async () => docFrom(String(await run(docInfoScript)).split('\n'));
   // The document and its page list in one round trip
   const contextScript = `${docInfoScript.trim().replace(/;$/, '')} + "\\nPAGES\\n" + (function () {
@@ -588,8 +599,92 @@ export function createReviewTools(ctx) {
     return ctx.respond(await run(script), 'Find Text');
   };
 
-  handlers.prepare_edit = async (args) => {
+  // Backup (optional) + BEFORE snapshot of pageIds (null = every page, [] = page order only) in one script
+  const takeSnapshot = async ({ doc, pageIds, reason, backup, resolution, showFirstPage }) => {
     pruneReviews();
+    const target = backup ? backupTarget(doc, reason) : null;
+    const d = new Date();
+    const id = `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}-${pad2(d.getHours())}${pad2(d.getMinutes())}${pad2(d.getSeconds())}_${slugify(doc.name.replace(/\.indd$/i, ''), 40) || 'document'}_${slugify(reason, 30)}`;
+    const dir = path.join(reviewRoot(), id, 'before');
+    fs.mkdirSync(dir, { recursive: true });
+    const show = showFirstPage ? `
+      // no window (e.g. document opened without one): not needed
+      try { if (pages.length) app.activeWindow.activePage = doc.pages[pages[0].index]; } catch (e) {}` : '';
+    let inv;
+    try {
+      inv = parseInventory(await run(`${target ? backupJs(target) : ''}${inventoryScript(pageIds, null, renderJs(scopeJobsJs(dir), resolution) + show)}`));
+    } catch (e) {
+      fs.rmSync(path.dirname(dir), { recursive: true, force: true });
+      throw e;
+    }
+    if (target) ctx.workflow.backups.add(docKey(doc));
+    fs.writeFileSync(path.join(dir, 'inventory.json'), JSON.stringify({ resolution, pageIds, ...inv }));
+    ctx.workflow.lastSnapshot = id;
+    ctx.workflow.prepared = true;
+    ctx.workflow.snapshots.set(docKey(doc), id);
+    return { id, inv, target };
+  };
+
+  // Add pages to an existing BEFORE snapshot (their state just before the change that touches them)
+  const extendSnapshot = async (id, pageIds) => {
+    const dir = path.join(reviewRoot(), id, 'before');
+    const file = path.join(dir, 'inventory.json');
+    const before = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const inv = parseInventory(await run(inventoryScript(pageIds, null, renderJs(scopeJobsJs(dir), before.resolution))));
+    before.pages.push(...inv.pages);
+    before.pageIds.push(...pageIds);
+    fs.writeFileSync(file, JSON.stringify(before));
+    return inv.pages;
+  };
+
+  // The pages a modifying call is about to touch: pages of the objects it names, the pages it names
+  // by index, else the page shown in InDesign. One round trip, with the document's identity.
+  const touchedScript = (args) => {
+    const num = (v) => (has(v) && Number.isFinite(Number(v)) ? Number(v) : null);
+    const ids = [args.id, args.frameId, args.objectId, args.keyObjectId, ...(Array.isArray(args.ids) ? args.ids : [])].map(num).filter((v) => v !== null);
+    const idx = [args.pageIndex, args.toPageIndex, ...(Array.isArray(args.pageIndexes) ? args.pageIndexes : [])].map(num).filter((v) => v !== null);
+    return `${docInfoScript.trim().replace(/;$/, '')} + "\\nTOUCHED\\n" + (function () {
+      var seen = {}, out = [];
+      function add(pg) { try { if (pg && pg.isValid && !seen[pg.id]) { seen[pg.id] = 1; out.push(pg.id); } } catch (e) {} }
+      var ids = ${JSON.stringify(ids)}, idx = ${JSON.stringify(idx)};
+      for (var i = 0; i < ids.length; i++) { var it = __findById(doc, ids[i]); try { if (it) add(it.parentPage); } catch (e) {} }
+      for (var k = 0; k < idx.length; k++) if (idx[k] >= 0 && idx[k] < doc.pages.length) add(doc.pages[idx[k]]);
+      if (!out.length) { try { if (app.activeWindow.parent === doc) add(app.activeWindow.activePage); } catch (e) {} }
+      return out.join(",");
+    })();`;
+  };
+
+  // Tools that modify but are no edit of the open document's pages
+  const AUTO_SKIP = new Set(['data_merge']);
+
+  // Before a tool that modifies the document: make sure the pages it touches are in a BEFORE
+  // snapshot (with a backup the first time), so review_compare always has something to compare.
+  // Documents built in this session are skipped. INDESIGN_AUTO_SNAPSHOT=0 turns it off.
+  // Returns a line for the tool result, or null.
+  const autoSnapshot = async (def, args) => {
+    if (process.env.INDESIGN_AUTO_SNAPSHOT === '0' || !def.modifies || AUTO_SKIP.has(def.name)) return null;
+    let out;
+    try { out = String(await run(touchedScript(args))); } catch { return null; }   // no document: the tool reports it
+    const [info, list = ''] = out.split('\nTOUCHED\n');
+    const doc = docFrom(info.split('\n'));
+    if (ctx.workflow.createdDocIds.has(doc.id)) return null;
+    const touched = list.split(',').filter(Boolean).map(Number);
+    const existing = ctx.workflow.snapshots.get(docKey(doc));
+    const known = existing && fs.existsSync(path.join(reviewRoot(), existing, 'before', 'inventory.json'));
+    if (known) {
+      const before = JSON.parse(fs.readFileSync(path.join(reviewRoot(), existing, 'before', 'inventory.json'), 'utf8'));
+      if (!before.pageIds) return null;   // every page is in it already
+      const missing = touched.filter((pid) => !before.pageIds.includes(pid));
+      if (!missing.length) return null;
+      const added = await extendSnapshot(existing, missing);
+      return `Auto snapshot: ${pageRange(added)} added to the BEFORE of snapshotId=${existing}.`;
+    }
+    const backup = !ctx.workflow.backups.has(docKey(doc));
+    const { id, inv, target } = await takeSnapshot({ doc, pageIds: touched, reason: `auto ${def.name}`, backup, resolution: 96, showFirstPage: false });
+    return `Auto snapshot before ${def.name}: ${target ? `backup ${target}; ` : ''}snapshotId=${id} – ${inv.pages.length ? pageRange(inv.pages) : 'page order only'}. Call review_compare when the change is done.`;
+  };
+
+  handlers.prepare_edit = async (args) => {
     const resolution = has(args.resolution) ? jsNum(args.resolution, 'resolution') : 96;
     if (resolution < 36 || resolution > 150) throw new Error('resolution must be 36-150 dpi');
     // Two round trips: the document and its pages, then backup + inventory + page renders +
@@ -600,25 +695,13 @@ export function createReviewTools(ctx) {
     const { doc, pages } = await getContext();
     const scope = pageIds ? pageIds.length : pages.length;
     if (scope > MAX_PAGES) throw new Error(`${scope} pages: name the pages (at most ${MAX_PAGES})`);
-    const target = args.backup !== false ? backupTarget(doc, args.reason) : null;
-    const d = new Date();
-    const id = `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}-${pad2(d.getHours())}${pad2(d.getMinutes())}${pad2(d.getSeconds())}_${slugify(doc.name.replace(/\.indd$/i, ''), 40) || 'document'}_${slugify(args.reason, 30)}`;
-    const dir = path.join(reviewRoot(), id, 'before');
-    fs.mkdirSync(dir, { recursive: true });
-    const show = `
-      // no window (e.g. document opened without one): not needed
-      try { if (pages.length) app.activeWindow.activePage = doc.pages[pages[0].index]; } catch (e) {}`;
-    const inv = parseInventory(await run(`${target ? backupJs(target) : ''}${inventoryScript(pageIds, null, renderJs(scopeJobsJs(dir), resolution) + show)}`));
+    const { id, inv, target } = await takeSnapshot({ doc, pageIds, reason: args.reason, backup: args.backup !== false, resolution, showFirstPage: true });
     const lines = [];
     if (target) {
-      ctx.workflow.backups.add(doc.filePath || doc.name);
       lines.push(`Backup: ${target}${doc.converted ? ' (document converted from an older InDesign version: saving it will ask for a new name)' : !doc.filePath ? ' (the document was never saved: ask the user where to save it; save_document without filePath puts it in Documents)' : doc.modified ? ' (includes unsaved changes)' : ''}`);
     } else {
       lines.push('Backup: skipped (backup: false)');
     }
-    fs.writeFileSync(path.join(dir, 'inventory.json'), JSON.stringify({ resolution, pageIds, ...inv }));
-    ctx.workflow.lastSnapshot = id;
-    ctx.workflow.prepared = true;
     lines.push(`Snapshot: snapshotId=${id} – ${inv.pages.length ? pageRange(inv.pages) : 'page order only'}`);
     if (args.listObjects !== false && inv.pages.length && inv.pages.length <= 6) lines.push('', ...inv.pages.map((p) => pageSummary(p)));
     else if (args.listObjects !== false && inv.pages.length) lines.push(`(${inv.pages.length} pages: object lists omitted; use list_page_items or find_text for the page you work on)`);
@@ -791,6 +874,8 @@ export function createReviewTools(ctx) {
     fs.writeFileSync(htmlFile, reportHtml({ title, summary, pages: imagesOut, rows: allRows, L }));
 
     const text = [summary];
+    // The inline images reach the agent only: the files are what it shows the user
+    if (imagesOut.length) text.push(`${fr ? 'Images à montrer à l\'utilisateur (fichiers)' : 'Images to show the user (files)'}: ${imagesOut.map((p) => p.file).join(' ; ')}`);
     if (imagesOut.length) text.push(fr ? 'Images : AVANT à gauche, APRÈS à droite ; orange = modifié ou déplacé, vert = ajouté, rouge = supprimé ; numéros = colonne #.' : 'Images: BEFORE left, AFTER right; orange = modified or moved, green = added, red = removed; numbers = # column.');
     if (table) text.push('', table);
     if (allRows.length) {
@@ -804,7 +889,7 @@ export function createReviewTools(ctx) {
     return { content };
   };
 
-  return { definitions, handlers };
+  return { definitions, handlers, hooks: { beforeModify: autoSnapshot } };
 }
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');

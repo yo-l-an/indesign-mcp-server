@@ -55,7 +55,7 @@ export class InDesignMCPServer {
     this.policy = createPolicy();
 
     // Every tool lives in a module that declares its schema, traits and handler (lib/registry.js)
-    this.workflow = { guideRead: false, prepared: false, reminded: false, backups: new Set(), lastSnapshot: null };
+    this.workflow = { guideRead: false, prepared: false, reminded: false, backups: new Set(), lastSnapshot: null, snapshots: new Map(), createdDocIds: new Set() };
     // Tool modules see only this context, never the server (lib/tool-context.js)
     const ctx = createToolContext({ executor: this.executor, policy: this.policy, workflow: this.workflow });
     this.registry = createRegistry([
@@ -82,15 +82,15 @@ export class InDesignMCPServer {
     });
   }
 
-  // The first tool that modifies the document without prepare_edit in this session gets a
-  // one-line reminder (INDESIGN_WORKFLOW_REMINDERS=0 turns it off).
+  // The first tool that modifies a document with no snapshot (prepare_edit or the automatic one)
+  // gets a one-line reminder (INDESIGN_WORKFLOW_REMINDERS=0 turns it off).
   withWorkflowReminder(name, result) {
     const w = this.workflow;
     if (w.prepared || w.reminded || process.env.INDESIGN_WORKFLOW_REMINDERS === '0' || !this.registry.definition(name).modifies || !result?.content) return result;
     w.reminded = true;
     return {
       ...result,
-      content: [...result.content, { type: 'text', text: 'Workflow: no prepare_edit in this session. For an existing document, call prepare_edit({ pages, reason }) before changing it (backup + before snapshot), then review_compare.' }],
+      content: [...result.content, { type: 'text', text: 'Workflow: no snapshot for this change (a document built in this session, or INDESIGN_AUTO_SNAPSHOT=0). To review changes to an existing document, prepare_edit({ pages, reason }) first, then review_compare.' }],
     };
   }
 
