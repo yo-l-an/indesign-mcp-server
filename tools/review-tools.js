@@ -288,6 +288,7 @@ export function createReviewTools(ctx) {
   // snapshots: document key -> snapshotId (explicit or automatic); createdDocIds: documents built in this session
   ctx.workflow.snapshots ||= new Map();
   ctx.workflow.createdDocIds ||= new Set();
+  ctx.workflow.lastBackups ||= new Map();   // document key -> latest backup made for it this session
   const docKey = (doc) => doc.filePath || doc.name;
 
   // Review folders older than 3 days go, and only the newest REVIEW_MAX_CASES are kept;
@@ -466,7 +467,7 @@ export function createReviewTools(ctx) {
     {
       name: 'review_compare',
       modifies: false,
-      description: 'AFTER the changes: compares the snapshot pages with the current state. Returns only the changed pages, as BEFORE | AFTER images with numbered dotted zones (orange modified, green added, red removed; text edits framed on the changed lines) and a side gutter minimap, cropped to the changed area, plus a Markdown change table (# | Page | Element | Property | Before | After | Change). Show both to the user. Can be called again after further corrections (always against the same BEFORE).',
+      description: 'AFTER the changes: compares the snapshot pages with the current state. Returns only the changed pages, as BEFORE | AFTER images with numbered dotted zones (orange modified, green added, red removed; text edits framed on the changed lines) and a side gutter minimap, cropped to the changed area, plus a Markdown change table (# | Page | Element | Property | Before | After | Change). Show both to the user. Then saves the reviewed document, since its backup is the way back (a document with no file yet is left for the user to name; INDESIGN_AUTO_SAVE=0 turns saving off). Can be called again after further corrections (always against the same BEFORE).',
       inputSchema: {
         type: 'object',
         properties: {
@@ -617,7 +618,7 @@ export function createReviewTools(ctx) {
       fs.rmSync(path.dirname(dir), { recursive: true, force: true });
       throw e;
     }
-    if (target) ctx.workflow.backups.add(docKey(doc));
+    if (target) { ctx.workflow.backups.add(docKey(doc)); ctx.workflow.lastBackups.set(docKey(doc), target); }
     fs.writeFileSync(path.join(dir, 'inventory.json'), JSON.stringify({ resolution, pageIds, ...inv }));
     ctx.workflow.lastSnapshot = id;
     ctx.workflow.prepared = true;
@@ -816,6 +817,29 @@ export function createReviewTools(ctx) {
     return { content: [{ type: 'text', text: `Restored ${doc.filePath} from ${backup}\nPrevious state saved as: ${safety}\nThe document is open again.` }] };
   };
 
+  // The end of a task: review_compare saves the reviewed document, since its backup is the way back.
+  // A document with no file yet (or converted from an older version) needs a name from the user.
+  // INDESIGN_AUTO_SAVE=0 turns it off.
+  const saveAfterReview = async (docName) => {
+    if (process.env.INDESIGN_AUTO_SAVE === '0') return 'Not saved (INDESIGN_AUTO_SAVE=0): ask the user whether to save.';
+    const out = String(await run(`
+      var doc = app.documents.itemByName(${jsStr(docName)});
+      if (!doc.isValid) throw new Error("The reviewed document is no longer open: " + ${jsStr(docName)});
+      var conv = false;
+      try { conv = doc.converted; } catch (e) {}
+      var res;
+      if (!__hasFile(doc)) res = "NOFILE";
+      else if (conv) res = "CONVERTED";
+      else { if (doc.modified) doc.save(); res = "SAVED\\n" + doc.fullName.fsName; }
+      res;
+    `));
+    if (out === 'NOFILE') return 'Not saved: the document has no file yet. Ask the user where to save it, then save_document({ filePath }).';
+    if (out === 'CONVERTED') return 'Not saved: the document was converted from an older InDesign version. Ask the user which name to save it under, then save_document({ filePath }).';
+    const file = out.replace(/^SAVED\n/, '');
+    const backup = [...ctx.workflow.lastBackups.entries()].find(([k]) => k === file || path.basename(k) === docName)?.[1];
+    return `Saved: ${file}${backup ? ` (to roll back: restore_backup with ${path.basename(backup)})` : ''}`;
+  };
+
   handlers.review_compare = async (args) => {
     const id = args.snapshotId || ctx.workflow.lastSnapshot;
     if (!id) throw new Error('No snapshot: call prepare_edit before the changes');
@@ -894,6 +918,7 @@ export function createReviewTools(ctx) {
       if (imagesOut.length) text.push(`  ${imagesOut.map((p) => path.basename(p.file)).join(', ')}`);
       if (imagesOut.length > maxImages) text.push(fr ? `${imagesOut.length - maxImages} image(s) non affichée(s) ici.` : `${imagesOut.length - maxImages} image(s) not shown here.`);
     }
+    text.push('', await saveAfterReview(before.document.name));
     const content = [{ type: 'text', text: text.join('\n') }];
     for (const p of imagesOut.slice(0, maxImages)) content.push({ type: 'image', data: p.png.toString('base64'), mimeType: 'image/png' });
     return { content };

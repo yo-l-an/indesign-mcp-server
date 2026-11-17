@@ -61,11 +61,11 @@ The images in the tool result reach you only. Show the PM the files listed on th
 ### 5. Close the task
 
 - Further corrections on the same task ("finally 16 €"): change, then `review_compare()` again. It compares with the same BEFORE, so the PM sees the whole task.
-- Saving: ask the PM after the review; save with `save_document` once they agree. A document with no file yet ("Sans titre-1") needs a place: ask the PM and pass `filePath` (Saving, below).
+- Saving is automatic: `review_compare` saves the reviewed document after the review, and its result names the backup to roll back to (`restore_backup`). Tell the PM it is saved and where the backup is. A document with no file yet ("Sans titre-1") or converted from an older version stays unsaved: the result says so; ask the PM for a place or a name and pass `filePath` (Saving, below).
 - A new, separate request starts again at step 1 with a new `prepare_edit`.
 - A bug, a missing feature, a better way found, or a fix you made to the server during the task → NOTES.md (Improving the server, below).
 
-**Done when** the PM has confirmed the result and said whether to save.
+**Done when** the PM has confirmed the result, and the review result shows `Saved:` (or the PM has given a place for a document with no file).
 
 ## Reference
 

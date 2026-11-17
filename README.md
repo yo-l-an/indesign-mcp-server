@@ -110,6 +110,8 @@ On Windows, use a Windows path with escaped backslashes, e.g. `"args": ["C:\\pat
 | Variable | Purpose |
 |---|---|
 | `INDESIGN_EXECUTOR` | `osascript` runs every script through a new `osascript` process instead of the long-running worker (macOS; slower, for troubleshooting). |
+| `INDESIGN_AUTO_SAVE` | `0` = `review_compare` does not save the document after the review (default: it saves). |
+| `INDESIGN_AUTO_SNAPSHOT` | `0` = no automatic backup and snapshot before changes (default: on). |
 | `INDESIGN_DEFAULT_SAVE_DIR` | Folder for a never-saved document saved without `filePath` (default `~/Documents`). |
 | `INDESIGN_ALLOWED_DIRS` | Extra directories tools may read and write, besides your home folder and the shared folder (`/Users/Shared` on macOS, `C:\Users\Public` on Windows). Separate with `:` on macOS, `;` on Windows. |
 | `INDESIGN_APP_NAME` | InDesign version to script, e.g. `Adobe InDesign 2025`. On Windows the year selects the COM ProgID `InDesign.Application.2025`. |
@@ -208,6 +210,7 @@ New swatches default to **CMYK** (0-100). `hex` or RGB values are converted to C
 One policy (`lib/policy.js`) checks every file argument before a tool runs: paths are absolute (or `~/...`), inside your home folder, the shared folder or `INDESIGN_ALLOWED_DIRS`, never a system folder, with symlinks resolved. A tool that deletes (`delete_page`, `delete_object`, `delete_color_swatch`, `restore_backup`) always needs `confirmDestructive: true`; a tool that writes files needs it only when the target already exists.
 
 ### Saving
+- `review_compare` ends a task by saving the reviewed document; its backup (named in the result) is the way back with `restore_backup`. A document with no file yet, or converted from an older InDesign version, stays unsaved and the result asks for a place. `INDESIGN_AUTO_SAVE=0` turns this off.
 - `save_document` without `filePath` is a plain save of the active document (or of the one named by `name`). A document that was never saved ("Sans titre-1") is saved into `~/Documents` under its own name (`-2`, `-3`… when taken; `INDESIGN_DEFAULT_SAVE_DIR` changes the folder), and the result gives the path so the user can be told; `close_document({ save: true })` does the same. A converted document still asks for `filePath`.
 - `create_document({ filePath })` saves the new document there right away: ask the user where first.
 - With `filePath` it is Save As: the same document is renamed and stays open. If the path is the document's own file, it is just a plain save (no confirmation, no failure). Overwriting a *different* existing file needs `confirmDestructive: true`; saving onto the file of another open document is refused. New files need no confirmation.
@@ -255,7 +258,7 @@ Locate text without reading whole stories: returns each match with page name, pa
 
 #### `review_compare`
 
-AFTER the changes: compares the snapshot pages with the current state. Returns only the changed pages, as BEFORE \| AFTER images with numbered dotted zones (orange modified, green added, red removed; text edits framed on the changed lines) and a side gutter minimap, cropped to the changed area, plus a Markdown change table (# \| Page \| Element \| Property \| Before \| After \| Change). Show both to the user. Can be called again after further corrections (always against the same BEFORE).
+AFTER the changes: compares the snapshot pages with the current state. Returns only the changed pages, as BEFORE \| AFTER images with numbered dotted zones (orange modified, green added, red removed; text edits framed on the changed lines) and a side gutter minimap, cropped to the changed area, plus a Markdown change table (# \| Page \| Element \| Property \| Before \| After \| Change). Show both to the user. Then saves the reviewed document, since its backup is the way back (a document with no file yet is left for the user to name; INDESIGN_AUTO_SAVE=0 turns saving off). Can be called again after further corrections (always against the same BEFORE).
 
 | Parameter | Type | Description |
 |---|---|---|
