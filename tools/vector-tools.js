@@ -330,7 +330,7 @@ export function createVectorTools(ctx) {
         properties: {
           shapeId: { type: 'number', description: 'Id of the shape that becomes the mask' },
           imagePath: { type: 'string', description: 'Path of the image file' },
-          fitOption: { type: 'string', enum: ['FILL_PROPORTIONALLY', 'PROPORTIONALLY', 'CONTENT_TO_FRAME', 'CENTER_CONTENT', 'NONE'], default: 'FILL_PROPORTIONALLY' },
+          fitOption: { type: 'string', enum: ['FILL_PROPORTIONALLY', 'PROPORTIONALLY', 'CONTENT_TO_FRAME', 'CENTER_CONTENT', 'NONE'], description: 'How the image fits the shape: FILL_PROPORTIONALLY = covers the shape, edges cropped (photos); PROPORTIONALLY = whole image inside, empty areas when the ratios differ; CONTENT_TO_FRAME = stretched to the shape bounds (distorts); CENTER_CONTENT = 100%, centred; NONE = 100%, top-left', default: 'FILL_PROPORTIONALLY' },
           contentOffsetX: { type: 'number', description: 'Move the image inside the shape (mm)' },
           contentOffsetY: { type: 'number', description: 'Move the image inside the shape (mm)' },
           contentScale: { type: 'number', description: 'Scale of the image content in percent' },

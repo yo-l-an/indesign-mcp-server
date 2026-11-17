@@ -1222,7 +1222,7 @@ Place an image into a new frame (mm). Give width and height for a fixed frame, o
 | `width` | number | Frame width in mm |
 | `height` | number | Frame height in mm |
 | `pageIndex` | number | Page index (0-based) Default: `0`. |
-| `fitOption` | `FILL_PROPORTIONALLY` \| `PROPORTIONALLY` \| `CONTENT_TO_FRAME` \| `FRAME_TO_CONTENT` \| `CENTER_CONTENT` \| `NONE` | FILL_PROPORTIONALLY = crop to fill the frame; PROPORTIONALLY = fit inside; NONE = keep 100% Default: `"PROPORTIONALLY"`. |
+| `fitOption` | `FILL_PROPORTIONALLY` \| `PROPORTIONALLY` \| `CONTENT_TO_FRAME` \| `FRAME_TO_CONTENT` \| `CENTER_CONTENT` \| `NONE` | How the image fits the frame, with both width and height (otherwise the frame takes the aspect ratio of the graphic and the option is ignored): PROPORTIONALLY = whole graphic inside the frame, empty bands when the ratios differ (logos, charts, nothing may be cut); FILL_PROPORTIONALLY = covers the frame, edges cropped (photos, backgrounds, grid cells); CONTENT_TO_FRAME = stretched to the frame (distorts); FRAME_TO_CONTENT = frame resized to the graphic at 100% (width/height discarded); CENTER_CONTENT = 100%, centred; NONE = 100%, top-left Default: `"PROPORTIONALLY"`. |
 | `contentOffsetX` | number | Move the image inside the frame by this many mm (after fitting) |
 | `contentOffsetY` | number | Move the image inside the frame by this many mm (after fitting) |
 | `contentScale` | number | Scale the image content to this percentage (after fitting) |
@@ -1236,7 +1236,7 @@ Place an image into an existing shape (path, rectangle, oval, polygon) which act
 |---|---|---|
 | `shapeId` *(required)* | number | Id of the shape that becomes the mask |
 | `imagePath` *(required)* | string | Path of the image file |
-| `fitOption` | `FILL_PROPORTIONALLY` \| `PROPORTIONALLY` \| `CONTENT_TO_FRAME` \| `CENTER_CONTENT` \| `NONE` |  Default: `"FILL_PROPORTIONALLY"`. |
+| `fitOption` | `FILL_PROPORTIONALLY` \| `PROPORTIONALLY` \| `CONTENT_TO_FRAME` \| `CENTER_CONTENT` \| `NONE` | How the image fits the shape: FILL_PROPORTIONALLY = covers the shape, edges cropped (photos); PROPORTIONALLY = whole image inside, empty areas when the ratios differ; CONTENT_TO_FRAME = stretched to the shape bounds (distorts); CENTER_CONTENT = 100%, centred; NONE = 100%, top-left Default: `"FILL_PROPORTIONALLY"`. |
 | `contentOffsetX` | number | Move the image inside the shape (mm) |
 | `contentOffsetY` | number | Move the image inside the shape (mm) |
 | `contentScale` | number | Scale of the image content in percent |
@@ -1253,7 +1253,7 @@ Place a vector graphic (.svg, .ai, .eps, .pdf) into a new frame (mm). Give width
 | `width` | number | Frame width in mm |
 | `height` | number | Frame height in mm |
 | `pageIndex` | number | Page index (0-based) Default: `0`. |
-| `fitOption` | `PROPORTIONALLY` \| `FILL_PROPORTIONALLY` \| `CONTENT_TO_FRAME` \| `FRAME_TO_CONTENT` \| `CENTER_CONTENT` \| `NONE` | How the graphic fits the frame (with width and height): PROPORTIONALLY = fit inside, FILL_PROPORTIONALLY = crop to fill Default: `"PROPORTIONALLY"`. |
+| `fitOption` | `PROPORTIONALLY` \| `FILL_PROPORTIONALLY` \| `CONTENT_TO_FRAME` \| `FRAME_TO_CONTENT` \| `CENTER_CONTENT` \| `NONE` | How the graphic fits the frame, with both width and height (otherwise the frame takes the aspect ratio of the graphic and the option is ignored): PROPORTIONALLY = whole graphic inside the frame, empty bands when the ratios differ (logos, charts, nothing may be cut); FILL_PROPORTIONALLY = covers the frame, edges cropped (photos, backgrounds, grid cells); CONTENT_TO_FRAME = stretched to the frame (distorts); FRAME_TO_CONTENT = frame resized to the graphic at 100% (width/height discarded); CENTER_CONTENT = 100%, centred; NONE = 100%, top-left Default: `"PROPORTIONALLY"`. |
 | `embed` | boolean | Unlink and embed the graphic in the document Default: `false`. |
 | `pdfPage` | number | PDF / AI: page number to place (1-based) Default: `1`. |
 | `crop` | `pdf` \| `art` \| `trim` \| `bleed` \| `media` \| `content_visible` \| `content_all` | PDF / AI: crop to Default: `"pdf"`. |
@@ -1270,7 +1270,7 @@ Place SVG markup (a string) as a vector graphic: the server writes it to a temp 
 | `width` | number | Frame width in mm |
 | `height` | number | Frame height in mm |
 | `pageIndex` | number | Page index (0-based) Default: `0`. |
-| `fitOption` | `PROPORTIONALLY` \| `FILL_PROPORTIONALLY` \| `CONTENT_TO_FRAME` \| `FRAME_TO_CONTENT` \| `CENTER_CONTENT` \| `NONE` | How the graphic fits the frame (with width and height): PROPORTIONALLY = fit inside, FILL_PROPORTIONALLY = crop to fill Default: `"PROPORTIONALLY"`. |
+| `fitOption` | `PROPORTIONALLY` \| `FILL_PROPORTIONALLY` \| `CONTENT_TO_FRAME` \| `FRAME_TO_CONTENT` \| `CENTER_CONTENT` \| `NONE` | How the graphic fits the frame, with both width and height (otherwise the frame takes the aspect ratio of the graphic and the option is ignored): PROPORTIONALLY = whole graphic inside the frame, empty bands when the ratios differ (logos, charts, nothing may be cut); FILL_PROPORTIONALLY = covers the frame, edges cropped (photos, backgrounds, grid cells); CONTENT_TO_FRAME = stretched to the frame (distorts); FRAME_TO_CONTENT = frame resized to the graphic at 100% (width/height discarded); CENTER_CONTENT = 100%, centred; NONE = 100%, top-left Default: `"PROPORTIONALLY"`. |
 | `embed` | boolean | Unlink and embed the graphic in the document Default: `false`. |
 | `saveTo` | string | Optional: keep the .svg at this path (inside the allowed folders) instead of a temp file |
 | `confirmDestructive` | boolean | Confirm an action that deletes or overwrites (only when the user asked for it) Default: `false`. |
@@ -1288,7 +1288,7 @@ Generate a small vector PDF with EXACT CMYK fill/stroke values from SVG path dat
 | `width` | number | Frame width in mm |
 | `height` | number | Frame height in mm |
 | `pageIndex` | number | Page index (0-based) Default: `0`. |
-| `fitOption` | `PROPORTIONALLY` \| `FILL_PROPORTIONALLY` \| `CONTENT_TO_FRAME` \| `FRAME_TO_CONTENT` \| `CENTER_CONTENT` \| `NONE` | How the graphic fits the frame (with width and height): PROPORTIONALLY = fit inside, FILL_PROPORTIONALLY = crop to fill Default: `"PROPORTIONALLY"`. |
+| `fitOption` | `PROPORTIONALLY` \| `FILL_PROPORTIONALLY` \| `CONTENT_TO_FRAME` \| `FRAME_TO_CONTENT` \| `CENTER_CONTENT` \| `NONE` | How the graphic fits the frame, with both width and height (otherwise the frame takes the aspect ratio of the graphic and the option is ignored): PROPORTIONALLY = whole graphic inside the frame, empty bands when the ratios differ (logos, charts, nothing may be cut); FILL_PROPORTIONALLY = covers the frame, edges cropped (photos, backgrounds, grid cells); CONTENT_TO_FRAME = stretched to the frame (distorts); FRAME_TO_CONTENT = frame resized to the graphic at 100% (width/height discarded); CENTER_CONTENT = 100%, centred; NONE = 100%, top-left Default: `"PROPORTIONALLY"`. |
 | `embed` | boolean | Unlink and embed the generated PDF (recommended: the temp file is removed afterwards) Default: `true`. |
 | `saveTo` | string | Optional: keep the generated .pdf at this path instead of a temp file |
 | `confirmDestructive` | boolean | Confirm an action that deletes or overwrites (only when the user asked for it) Default: `false`. |

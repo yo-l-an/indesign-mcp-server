@@ -20,7 +20,7 @@ export function createShapeTools(ctx) {
           width: { type: 'number', description: 'Frame width in mm' },
           height: { type: 'number', description: 'Frame height in mm' },
           pageIndex: { type: 'number', description: 'Page index (0-based)', default: 0 },
-          fitOption: { type: 'string', enum: ['FILL_PROPORTIONALLY', 'PROPORTIONALLY', 'CONTENT_TO_FRAME', 'FRAME_TO_CONTENT', 'CENTER_CONTENT', 'NONE'], description: 'FILL_PROPORTIONALLY = crop to fill the frame; PROPORTIONALLY = fit inside; NONE = keep 100%', default: 'PROPORTIONALLY' },
+          fitOption: { type: 'string', enum: ['FILL_PROPORTIONALLY', 'PROPORTIONALLY', 'CONTENT_TO_FRAME', 'FRAME_TO_CONTENT', 'CENTER_CONTENT', 'NONE'], description: 'How the image fits the frame, with both width and height (otherwise the frame takes the aspect ratio of the graphic and the option is ignored): PROPORTIONALLY = whole graphic inside the frame, empty bands when the ratios differ (logos, charts, nothing may be cut); FILL_PROPORTIONALLY = covers the frame, edges cropped (photos, backgrounds, grid cells); CONTENT_TO_FRAME = stretched to the frame (distorts); FRAME_TO_CONTENT = frame resized to the graphic at 100% (width/height discarded); CENTER_CONTENT = 100%, centred; NONE = 100%, top-left', default: 'PROPORTIONALLY' },
           contentOffsetX: { type: 'number', description: 'Move the image inside the frame by this many mm (after fitting)' },
           contentOffsetY: { type: 'number', description: 'Move the image inside the frame by this many mm (after fitting)' },
           contentScale: { type: 'number', description: 'Scale the image content to this percentage (after fitting)' },

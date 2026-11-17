@@ -114,7 +114,7 @@ export function createGraphicsTools(ctx) {
     width: { type: 'number', description: 'Frame width in mm' },
     height: { type: 'number', description: 'Frame height in mm' },
     pageIndex: { type: 'number', description: 'Page index (0-based)', default: 0 },
-    fitOption: { type: 'string', enum: Object.keys(FITS), description: 'How the graphic fits the frame (with width and height): PROPORTIONALLY = fit inside, FILL_PROPORTIONALLY = crop to fill', default: 'PROPORTIONALLY' },
+    fitOption: { type: 'string', enum: Object.keys(FITS), description: 'How the graphic fits the frame, with both width and height (otherwise the frame takes the aspect ratio of the graphic and the option is ignored): PROPORTIONALLY = whole graphic inside the frame, empty bands when the ratios differ (logos, charts, nothing may be cut); FILL_PROPORTIONALLY = covers the frame, edges cropped (photos, backgrounds, grid cells); CONTENT_TO_FRAME = stretched to the frame (distorts); FRAME_TO_CONTENT = frame resized to the graphic at 100% (width/height discarded); CENTER_CONTENT = 100%, centred; NONE = 100%, top-left', default: 'PROPORTIONALLY' },
     embed: { type: 'boolean', description: 'Unlink and embed the graphic in the document', default: false },
   };
 
