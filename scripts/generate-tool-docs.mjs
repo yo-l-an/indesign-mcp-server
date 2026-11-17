@@ -23,7 +23,7 @@ const CATEGORIES = [
   ['Images and graphics', ['place_image', 'place_image_in_shape', 'place_graphic', 'create_graphic_from_svg', 'create_cmyk_pdf_shape']],
   ['Colour', ['create_color_swatch', 'update_color_swatch', 'delete_color_swatch', 'list_color_swatches', 'apply_color', 'convert_rgb_to_cmyk']],
   ['Tables', ['create_table', 'populate_table']],
-  ['Layers', ['create_layer', 'set_active_layer', 'list_layers']],
+  ['Layers', ['create_layer', 'set_active_layer', 'list_layers', 'move_layer', 'move_to_layer']],
   ['Export and production', ['export_pdf', 'export_images', 'export_epub', 'package_document', 'preflight_document', 'data_merge']],
   ['Utilities', ['execute_indesign_code', 'add_improvement_note', 'read_improvement_notes']],
 ];

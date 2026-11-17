@@ -68,7 +68,7 @@ create_path_from_svg({
 ## Tools
 
 <!-- TOOLS:START -->
-_109 tools. Generated from the server's tool schemas by `npm run docs`._
+_111 tools. Generated from the server's tool schemas by `npm run docs`._
 
 ### Workflow, review and backups
 
@@ -1395,9 +1395,29 @@ Set the active layer
 
 #### `list_layers`
 
-List all layers in the document
+List all layers in the document, top of the stack first
 
 _No parameters._
+
+#### `move_layer`
+
+Change the stacking order of a layer: to the top or bottom of the stack, or directly above / below another layer. Layers higher in the stack paint over lower ones.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `name` *(required)* | string | Layer to move |
+| `position` | `top` \| `bottom` | Top or bottom of the layer stack |
+| `above` | string | Or: put it directly above this layer |
+| `below` | string | Or: put it directly below this layer |
+
+#### `move_to_layer`
+
+Move objects (by id) to another layer. They keep their page and position; on the target layer they sit above what is already there.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `ids` *(required)* | number[] | Object ids |
+| `layerName` *(required)* | string | Target layer |
 
 ### Export and production
 

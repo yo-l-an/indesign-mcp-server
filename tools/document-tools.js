@@ -190,8 +190,36 @@ export function createDocumentTools(ctx) {
     {
       name: 'list_layers',
       modifies: false,
-      description: 'List all layers in the document',
+      description: 'List all layers in the document, top of the stack first',
       inputSchema: { type: 'object', properties: {} },
+    },
+    {
+      name: 'move_layer',
+      modifies: true,
+      description: 'Change the stacking order of a layer: to the top or bottom of the stack, or directly above / below another layer. Layers higher in the stack paint over lower ones.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'Layer to move' },
+          position: { type: 'string', enum: ['top', 'bottom'], description: 'Top or bottom of the layer stack' },
+          above: { type: 'string', description: 'Or: put it directly above this layer' },
+          below: { type: 'string', description: 'Or: put it directly below this layer' },
+        },
+        required: ['name'],
+      },
+    },
+    {
+      name: 'move_to_layer',
+      modifies: true,
+      description: 'Move objects (by id) to another layer. They keep their page and position; on the target layer they sit above what is already there.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          ids: { type: 'array', items: { type: 'number' }, description: 'Object ids' },
+          layerName: { type: 'string', description: 'Target layer' },
+        },
+        required: ['ids', 'layerName'],
+      },
     },
     {
       name: 'zoom_to_page',
@@ -779,6 +807,65 @@ export function createDocumentTools(ctx) {
       return this.respond(result, "Set Active Layer");
     },
 
+    async moveLayer(args) {
+      const { name, position, above, below } = args;
+      const targets = [position, above, below].filter((v) => v !== undefined && v !== null);
+      if (targets.length !== 1) throw new Error('Give exactly one of position, above or below');
+      if (position !== undefined && position !== 'top' && position !== 'bottom') {
+        throw new Error(`position must be "top" or "bottom" (got ${JSON.stringify(position)})`);
+      }
+
+      const script = `
+        var doc = __requireDoc();
+        var layer = doc.layers.itemByName(${this.jsStr(name)});
+        if (!layer.isValid) throw new Error("Layer not found: " + ${this.jsStr(name)});
+        ${position !== undefined ? `
+          layer.move(${position === 'top' ? 'LocationOptions.AT_BEGINNING' : 'LocationOptions.AT_END'});
+        ` : `
+          var ref = doc.layers.itemByName(${this.jsStr(above ?? below)});
+          if (!ref.isValid) throw new Error("Layer not found: " + ${this.jsStr(above ?? below)});
+          if (ref.id === layer.id) throw new Error("A layer cannot be moved relative to itself");
+          layer.move(${above !== undefined ? 'LocationOptions.BEFORE' : 'LocationOptions.AFTER'}, ref);
+        `}
+        var order = [];
+        for (var i = 0; i < doc.layers.length; i++) order.push(doc.layers[i].name);
+        "Layer " + ${this.jsStr(name)} + " moved. Stack (top first): " + order.join(" > ");
+      `;
+
+      const result = await this.run(script);
+      return this.respond(result, "Move Layer");
+    },
+
+    async moveToLayer(args) {
+      const { ids, layerName } = args;
+      if (!Array.isArray(ids) || ids.length === 0) throw new Error('ids must be a non-empty array of object ids');
+      const idList = ids.map((id) => this.jsNum(id, 'ids'));
+
+      const script = `
+        var doc = __requireDoc();
+        var layer = doc.layers.itemByName(${this.jsStr(layerName)});
+        if (!layer.isValid) throw new Error("Layer not found: " + ${this.jsStr(layerName)});
+        if (layer.locked) throw new Error("Layer is locked: " + ${this.jsStr(layerName)});
+        var ids = [${idList.join(', ')}];
+        var items = [];
+        for (var i = 0; i < ids.length; i++) {
+          var it = __findById(doc, ids[i]);
+          if (!it) throw new Error("No object with id " + ids[i] + " in the active document");
+          items.push(it);
+        }
+        var moved = [];
+        for (var j = 0; j < items.length; j++) {
+          if (items[j].itemLayer.locked) throw new Error("Object " + items[j].id + " is on a locked layer: " + items[j].itemLayer.name);
+          items[j].itemLayer = layer;
+          moved.push(items[j].id);
+        }
+        moved.length + " object(s) moved to layer " + ${this.jsStr(layerName)} + ": " + moved.join(", ");
+      `;
+
+      const result = await this.run(script);
+      return this.respond(result, "Move To Layer");
+    },
+
     async listLayers() {
       const script = `
         if (app.documents.length === 0) {
@@ -889,6 +976,8 @@ export function createDocumentTools(ctx) {
     navigate_to_page: (args) => self.navigateToPage(args),
     create_layer: (args) => self.createLayer(args),
     set_active_layer: (args) => self.setActiveLayer(args),
+    move_layer: (args) => self.moveLayer(args),
+    move_to_layer: (args) => self.moveToLayer(args),
     list_layers: () => self.listLayers(),
     zoom_to_page: (args) => self.zoomToPage(args),
     execute_indesign_code: (args) => self.executeInDesignCode(args.code),
