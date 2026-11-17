@@ -49,6 +49,37 @@ A comprehensive **Model Context Protocol (MCP) server** for **Adobe InDesign aut
 - Self-improvement: agents write bugs, wanted features, better ways and their own local fixes to `NOTES.md` in the server folder (`add_improvement_note`, `read_improvement_notes`); the file is git-ignored and handed to the author, who implements the changes
 - Client files: `read_source_document` reads a Word / PDF brief as Markdown (outline, then slices); `read_feedback` turns a commented PDF (notes, highlights, strike-outs, insertions, replies) or a Word file (comments, tracked changes) into one numbered table, and with `locate: true` finds each item in the open document (still to do, or already done)
 
+## 🔍 Review images
+
+`review_compare` shows each changed page as BEFORE | AFTER, with numbered zones that match the change table. A modified object's label carries one icon per kind of change and its value: ✥ move, ⤢ resize, ↻ / ↺ rotation, **fx** effects, ■ fill, □ stroke, ◐ opacity, **T** text.
+
+**Objects edited**: fill, rotation, move, resize + opacity, drop shadow
+
+![Objects edited](assets/readme/review-objects.png)
+
+**Text edited, object added (green), object removed (red)**
+
+![Text, added and removed](assets/readme/review-text.png)
+
+**Object moved to another page**
+
+![Object moved to another page](assets/readme/review-move.png)
+
+**Page map**: a page moved and a page added in a facing-pages document
+
+![Page map](assets/readme/review-pages.png)
+
+The change table that comes with the images:
+
+| # | Page | Element | Property | Before | After | Change |
+|---:|---|---|---|---|---|---|
+| 2 | 1 | Rectangle #21 «Logo» | Rotation | 0° | 12° | Modified |
+| 3 | 1 | Rectangle #22 «Photo» | Position / size | x 82 · y 48 · 50 × 34 mm | x 88 · y 60 · 50 × 34 mm | Modified |
+| 5 | 1 | Rectangle #24 | Effects | (none) | drop shadow | Modified |
+| 6 | 2 | Text frame #31 | Text | Price: ~~39~~ euros, sizes S to ~~L~~ | Price: **45** euros, sizes S to **XL** | Modified |
+
+These images are rendered from fixture pages by the real review code, with no InDesign: `npm run screenshots` regenerates them in `assets/readme/`.
+
 ## 🧭 Workflow for agents
 
 See [GUIDE.md](GUIDE.md). In short:
