@@ -10,9 +10,11 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-// Review files and backups in a throwaway folder (os.tmpdir() follows TMPDIR)
+// Review files and backups in a throwaway folder (os.tmpdir() follows TMPDIR, and TEMP / TMP on Windows)
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'indesign-mcp-auto-'));
 process.env.TMPDIR = TMP;
+process.env.TEMP = TMP;
+process.env.TMP = TMP;
 process.env.INDESIGN_ALLOWED_DIRS = TMP;
 process.env.INDESIGN_BACKUP_DIR = path.join(TMP, 'backups');
 process.env.INDESIGN_NOTES_PATH = path.join(TMP, 'NOTES.md');
