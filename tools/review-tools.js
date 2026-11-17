@@ -395,7 +395,7 @@ export function createReviewTools(ctx) {
     {
       name: 'get_usage_guide',
       modifies: false,
-      description: 'Workflow guide: read once per session, before the first change to a document. Five steps (scope, prepare_edit, surgical change, review_compare, close) plus page names, ids, backups, converted documents and errors.',
+      description: 'Workflow guide: read once per session, before the first change to a document. Five steps (scope, prepare_edit, surgical change, review_compare, close) plus page names, ids, backups, saving, converted documents, errors and improvement notes.',
       inputSchema: { type: 'object', properties: {} },
     },
     {

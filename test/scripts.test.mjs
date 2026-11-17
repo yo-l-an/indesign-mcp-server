@@ -54,7 +54,7 @@ const ARGS = {
 // Every tool, from the registry.
 const TOOLS = await toolNames();
 // Tools that answer without InDesign
-const NO_SCRIPT = new Set(['get_usage_guide']);
+const NO_SCRIPT = new Set(['get_usage_guide', 'add_improvement_note', 'read_improvement_notes']);
 
 for (const method of TOOLS) {
   test(`${method}: produces parseable ExtendScript`, async () => {

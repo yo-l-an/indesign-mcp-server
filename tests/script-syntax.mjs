@@ -15,6 +15,7 @@ import vm from 'vm';
 const TMP = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'indesign-mcp-syntax-')));
 process.env.INDESIGN_ALLOWED_DIRS = TMP;
 process.env.INDESIGN_ALLOW_ARBITRARY_CODE = '1';
+process.env.INDESIGN_NOTES_PATH = path.join(TMP, 'NOTES.md');
 
 const { InDesignMCPServer } = await import('../index.js');
 const { buildWrapper } = await import('../lib/script-runtime.js');

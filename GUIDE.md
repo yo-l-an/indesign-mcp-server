@@ -58,6 +58,7 @@ Show the PM the image(s) and the change table, then report in three short parts:
 - Further corrections on the same task ("finally 16 €"): change, then `review_compare()` again. It compares with the same BEFORE, so the PM sees the whole task.
 - Saving: ask the PM after the review; save with `save_document` once they agree. A document with no file yet ("Sans titre-1") needs a place: ask the PM and pass `filePath` (Saving, below).
 - A new, separate request starts again at step 1 with a new `prepare_edit`.
+- A bug, a missing feature, a better way found, or a fix you made to the server during the task → NOTES.md (Improving the server, below).
 
 **Done when** the PM has confirmed the result and said whether to save.
 
@@ -136,7 +137,17 @@ Read the message: it names the next step (valid page names, missing parameter, w
 - `Paragraph style not found` / `Swatch not found` → `list_styles` / `list_color_swatches`; create a new one only when the PM wants it.
 - `Security confirmation required` → add `confirmDestructive: true` only for an action the PM asked for.
 - `use an absolute path` / `outside the allowed folders` → pass the full path (`/Users/...` or `~/...`) of a file inside the user's folders; the message lists them.
-- `… [debug script: path]` → an unexpected InDesign failure: report it with the path to the PM and stop that step.
+- `… [debug script: path]` → an unexpected InDesign failure: report it with the path to the PM and stop that step, and note it (Improving the server).
+
+### Improving the server (NOTES.md)
+
+The server improves through what you learn using it. You may have no push rights on its repository, so `NOTES.md` in the server folder carries your findings to the project's author, who chooses the real implementation.
+
+- **Found a bug, missed a feature, or found a better way**: `read_improvement_notes` (is it already there?), then `add_improvement_note({ kind, title, details, tool })`. In `details`: what you tried, what happened, how to reproduce it, what would help. Write it generically: no client names, no client text.
+- **Stuck, and you can edit files**: fix the script directly in the tool's module (`tools/*-tools.js`, the server folder is shown by `read_improvement_notes`). Keep the change small, and ask the user to restart the MCP server so it loads. Then `add_improvement_note({ status: "fixed-locally", filesChanged: ["tools/export-tools.js: what changed"], details })` with why and what it does now. Every local change gets a note; commits and pushes stay with the author.
+- **Before you finish**: tell the user in one short paragraph that the server needs improvements, that you wrote them (with any local fixes) in `NOTES.md`, and that the notes are ready to be given to the author of the project.
+
+**Done when** every workaround, bug, wish and local change of the session is in `NOTES.md`, and the user has had that paragraph.
 
 ### New documents
 

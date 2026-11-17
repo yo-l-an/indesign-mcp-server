@@ -1,6 +1,6 @@
 # InDesign MCP Server
 
-A comprehensive **Model Context Protocol (MCP) server** for **Adobe InDesign automation** with **105 tools**. This server enables AI assistants like Claude to directly control Adobe InDesign, automating complex publishing workflows, document creation, and professional layout tasks.
+A comprehensive **Model Context Protocol (MCP) server** for **Adobe InDesign automation** with **107 tools**. This server enables AI assistants like Claude to directly control Adobe InDesign, automating complex publishing workflows, document creation, and professional layout tasks.
 
 ## 🚀 Features
 
@@ -46,6 +46,7 @@ A comprehensive **Model Context Protocol (MCP) server** for **Adobe InDesign aut
 - `review_compare`: only the changed pages, as BEFORE | AFTER images with numbered dotted zones (orange modified, green added, red removed; text edits framed on the changed lines) and a side gutter minimap, cropped to the changed area, plus a change table; a self-contained `report.html`
 - Dated, named backups in `InDesign Agent Backups/` next to the .indd, never deleted by the server; `list_backups` / `restore_backup`
 - `find_text` locates quoted text (page name, frame id, context) without reading whole stories
+- Self-improvement: agents write bugs, wanted features, better ways and their own local fixes to `NOTES.md` in the server folder (`add_improvement_note`, `read_improvement_notes`); the file is git-ignored and handed to the author, who implements the changes
 - Client files: `read_source_document` reads a Word / PDF brief as Markdown (outline, then slices); `read_feedback` turns a commented PDF (notes, highlights, strike-outs, insertions, replies) or a Word file (comments, tracked changes) into one numbered table, and with `locate: true` finds each item in the open document (still to do, or already done)
 
 ## 🧭 Workflow for agents
@@ -213,7 +214,7 @@ One policy (`lib/policy.js`) checks every file argument before a tool runs: path
 ## 🛠️ Tool reference
 
 <!-- TOOLS:START -->
-_105 tools. Generated from the server's tool schemas by `npm run docs`._
+_107 tools. Generated from the server's tool schemas by `npm run docs`._
 
 ### Workflow, review and backups
 
@@ -1587,6 +1588,25 @@ Move an object (by id) to another page, by page name ("+N" = N-th page). It keep
 | `page` *(required)* | string | Destination page (page name, or "+N") |
 | `x` | number | New left edge in mm (default: unchanged) |
 | `y` | number | New top edge in mm (default: unchanged) |
+
+#### `add_improvement_note`
+
+Write a note for the author of this server in NOTES.md: a bug, a missing feature, a better way you found, or a fix you made yourself in the server files. Every local change to the server must have a note (files and what changed). Check read_improvement_notes first to avoid duplicates. Keep notes generic: no client names or client text.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `kind` *(required)* | `bug` \| `feature` \| `workaround` \| `observation` | bug, feature (wanted), workaround (a better way found), observation |
+| `title` *(required)* | string | One line: what it is about |
+| `details` *(required)* | string | What happened, how to reproduce it, what you expected, what would help (Markdown) |
+| `status` | `wanted` \| `fixed-locally` \| `workaround-found` | wanted (needs the author), fixed-locally (you changed server files), workaround-found Default: `"wanted"`. |
+| `tool` | string | The tool concerned, if any (e.g. export_pdf) |
+| `filesChanged` | string[] | Server files you changed, relative to the server folder, each with what changed (e.g. "tools/export-tools.js: keep the preset name") |
+
+#### `read_improvement_notes`
+
+Read NOTES.md, the improvement notes written so far for the author of this server (bugs, wanted features, workarounds, local fixes), with the path of the server folder.
+
+_No parameters._
 
 <!-- TOOLS:END -->
 

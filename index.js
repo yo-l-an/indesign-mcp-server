@@ -23,6 +23,7 @@ import { createTextTools } from './tools/text-tools.js';
 import { createStyleTools } from './tools/style-tools.js';
 import { createShapeTools } from './tools/shape-tools.js';
 import { createExportTools } from './tools/export-tools.js';
+import { createNotesTools } from './tools/notes-tools.js';
 import { createRegistry } from './lib/registry.js';
 import { createPolicy } from './lib/policy.js';
 import { createToolContext } from './lib/tool-context.js';
@@ -46,7 +47,7 @@ export class InDesignMCPServer {
         capabilities: {
           tools: { listChanged: true },
         },
-        instructions: 'Surgical InDesign corrections for a project manager. Before the first change to a document in a session, read get_usage_guide: the five-step workflow (scope, prepare_edit, change by id, review_compare, close), page names, backups. Client files (commented PDF, Word brief or feedback): read_feedback / read_source_document, then triage with the project manager before changing anything. Backups are permanent: delete them only on the user\'s explicit request.',
+        instructions: 'Surgical InDesign corrections for a project manager. Before the first change to a document in a session, read get_usage_guide: the five-step workflow (scope, prepare_edit, change by id, review_compare, close), page names, backups. Client files (commented PDF, Word brief or feedback): read_feedback / read_source_document, then triage with the project manager before changing anything. Backups are permanent: delete them only on the user\'s explicit request. A bug, a missing feature, a better way found, or a fix you made to the server files: add_improvement_note (NOTES.md for the author).',
       }
     );
 
@@ -58,7 +59,7 @@ export class InDesignMCPServer {
     // Tool modules see only this context, never the server (lib/tool-context.js)
     const ctx = createToolContext({ executor: this.executor, policy: this.policy, workflow: this.workflow });
     this.registry = createRegistry([
-      createReviewTools(ctx), createSourceTools(ctx),
+      createReviewTools(ctx), createSourceTools(ctx), createNotesTools(),
       createDocumentTools(ctx), createTextTools(ctx), createStyleTools(ctx), createShapeTools(ctx), createExportTools(ctx),
       createExtraTools(ctx), createVectorTools(ctx), createGraphicsTools(ctx), createResourceTools(ctx),
     ], { policy: this.policy });

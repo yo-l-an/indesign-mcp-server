@@ -71,3 +71,6 @@ temp_script.jsx
 
 # Output of tests/test-document.mjs
 tests/output/
+
+# Improvement notes written by agents (may describe client work): handed to the author, never committed
+NOTES.md

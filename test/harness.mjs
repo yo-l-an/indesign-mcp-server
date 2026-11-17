@@ -16,6 +16,9 @@ const ROOT = path.resolve(HERE, '..');
 
 let cached = null;
 
+// Notes written by tools during tests stay out of the repository
+process.env.INDESIGN_NOTES_PATH = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'indesign-mcp-notes-')), 'NOTES.md');
+
 /** Load the server once, with script execution stubbed out. */
 export async function loadServer() {
   if (cached) return cached;

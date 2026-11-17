@@ -8,6 +8,7 @@ Read `GUIDE.md` before the first change: it is the workflow to follow (scope →
 
 ## Working on the server
 
+- `NOTES.md` (git-ignored) is where agents using the server record bugs, wanted features, better ways and the local fixes they made (`add_improvement_note`). When one is handed over: implement each entry properly (or decline it), and port local fixes as real changes with tests rather than copying them.
 - `GUIDE.md` is served to agents verbatim: update it with every tool change or fix, and edit it with the `writing-for-agents` skill (steps with completion criteria, positive phrasing, one source of truth).
 - Every tool lives in a `tools/*-tools.js` module: its definition (schema + `modifies: true | false`, plus `paths` / `destructive` / `overwrites` for files and confirmations, applied by `lib/policy.js`) and its handler sit together; `lib/registry.js` lists, validates and calls them, and `index.js` only wires modules, the executor and the workflow reminder. A new tool = one entry in one module.
 - After changing tool schemas: `npm run docs` (README tool reference).
