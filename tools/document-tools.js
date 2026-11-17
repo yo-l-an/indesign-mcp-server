@@ -209,6 +209,36 @@ export function createDocumentTools(ctx) {
       },
     },
     {
+      name: 'set_layer',
+      modifies: true,
+      description: 'Change a layer: rename it, show / hide, lock / unlock, printing on / off (non-printing layers hold notes and guides for the team), its colour, and whether its guides show or are locked.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'Layer to change' },
+          newName: { type: 'string', description: 'New name' },
+          visible: { type: 'boolean', description: 'Show or hide the layer' },
+          locked: { type: 'boolean', description: 'Lock or unlock the layer' },
+          printable: { type: 'boolean', description: 'false: the layer is not printed or exported' },
+          color: { type: 'string', description: 'Layer colour name, e.g. RED, BLUE, LIGHT_BLUE, GREEN, YELLOW' },
+          showGuides: { type: 'boolean', description: 'Show the guides of this layer' },
+          lockGuides: { type: 'boolean', description: 'Lock the guides of this layer' },
+        },
+        required: ['name'],
+      },
+    },
+    {
+      name: 'delete_layer',
+      modifies: true,
+      destructive: true,
+      description: 'Delete a layer. Its objects are deleted with it, unless moveItemsTo names a layer to keep them on.',
+      inputSchema: {
+        type: 'object',
+        properties: { name: { type: 'string', description: 'Layer to delete' }, moveItemsTo: { type: 'string', description: 'Layer that receives the objects first' } },
+        required: ['name'],
+      },
+    },
+    {
       name: 'move_to_layer',
       modifies: true,
       description: 'Move objects (by id) to another layer. They keep their page and position; on the target layer they sit above what is already there.',
@@ -836,6 +866,51 @@ export function createDocumentTools(ctx) {
       return this.respond(result, "Move Layer");
     },
 
+    async setLayer(args) {
+      const { name } = args;
+      const set = [];
+      if (has(args.newName)) set.push(`if (doc.layers.itemByName(${this.jsStr(args.newName)}).isValid && ${this.jsStr(args.newName)} !== layer.name) throw new Error("Layer already exists: " + ${this.jsStr(args.newName)}); layer.name = ${this.jsStr(args.newName)};`);
+      for (const k of ['visible', 'locked', 'printable', 'showGuides', 'lockGuides']) if (has(args[k])) set.push(`layer.${k} = ${args[k] ? 'true' : 'false'};`);
+      if (has(args.color)) {
+        const c = String(args.color).toUpperCase().replace(/[\s-]+/g, '_');
+        if (!/^[A-Z_]+$/.test(c)) throw new Error(`Invalid color: ${args.color}`);
+        set.push(`var colour; try { colour = UIColors[${this.jsStr(c)}]; } catch (ce) {} if (colour === undefined) throw new Error("Unknown layer colour: " + ${this.jsStr(args.color)}); layer.layerColor = colour;`);
+      }
+      if (!set.length) throw new Error('Nothing to change: pass newName, visible, locked, printable, color, showGuides or lockGuides');
+      const result = await this.run(`
+        var doc = __requireDoc();
+        var layer = doc.layers.itemByName(${this.jsStr(name)});
+        if (!layer.isValid) throw new Error("Layer not found: " + ${this.jsStr(name)});
+        ${set.join('\n        ')}
+        "Layer " + layer.name + ": " + (layer.visible ? "visible" : "hidden") + ", " + (layer.locked ? "locked" : "unlocked") + ", " + (layer.printable ? "printing" : "non-printing") + ", guides " + (layer.showGuides ? "shown" : "hidden") + (layer.lockGuides ? " (locked)" : "");
+      `);
+      return this.respond(result, "Set Layer");
+    },
+
+    async deleteLayer(args) {
+      const result = await this.run(`
+        var doc = __requireDoc();
+        var layer = doc.layers.itemByName(${this.jsStr(args.name)});
+        if (!layer.isValid) throw new Error("Layer not found: " + ${this.jsStr(args.name)});
+        if (doc.layers.length === 1) throw new Error("A document keeps at least one layer");
+        var n = layer.allPageItems.length, moved = "";
+        ${has(args.moveItemsTo) ? `
+          var dest = doc.layers.itemByName(${this.jsStr(args.moveItemsTo)});
+          if (!dest.isValid) throw new Error("Layer not found: " + ${this.jsStr(args.moveItemsTo)});
+          if (dest.id === layer.id) throw new Error("moveItemsTo is the layer being deleted");
+          var wasLocked = dest.locked; dest.locked = false; layer.locked = false;
+          var its = layer.pageItems.everyItem().getElements();
+          for (var i = 0; i < its.length; i++) its[i].itemLayer = dest;
+          dest.locked = wasLocked;
+          moved = "; its " + its.length + " object(s) moved to " + dest.name;
+        ` : ''}
+        var nm = layer.name;
+        layer.remove();
+        "Layer " + nm + " deleted" + (moved || (n ? " with its " + n + " object(s)" : " (it was empty)"));
+      `);
+      return this.respond(result, "Delete Layer");
+    },
+
     async moveToLayer(args) {
       const { ids, layerName } = args;
       if (!Array.isArray(ids) || ids.length === 0) throw new Error('ids must be a non-empty array of object ids');
@@ -978,6 +1053,8 @@ export function createDocumentTools(ctx) {
     set_active_layer: (args) => self.setActiveLayer(args),
     move_layer: (args) => self.moveLayer(args),
     move_to_layer: (args) => self.moveToLayer(args),
+    set_layer: (args) => self.setLayer(args),
+    delete_layer: (args) => self.deleteLayer(args),
     list_layers: () => self.listLayers(),
     zoom_to_page: (args) => self.zoomToPage(args),
     execute_indesign_code: (args) => self.executeInDesignCode(args.code),

@@ -1338,6 +1338,10 @@ export function createTextTools(ctx) {
         app.findGrepPreferences = NothingEnum.nothing;
         app.changeGrepPreferences = NothingEnum.nothing;
         var found = [];
+        // Master pages are left out of searches by default: a replace must reach the text of masters too
+        var __mg = app.findChangeGrepOptions.includeMasterPages, __mt = app.findChangeTextOptions.includeMasterPages;
+        app.findChangeGrepOptions.includeMasterPages = true;
+        app.findChangeTextOptions.includeMasterPages = true;
         try {
           ${useGrep ? `
             app.findGrepPreferences.findWhat = ${this.jsStr(findText)};
@@ -1355,14 +1359,20 @@ export function createTextTools(ctx) {
           app.changeTextPreferences = NothingEnum.nothing;
           app.findGrepPreferences = NothingEnum.nothing;
           app.changeGrepPreferences = NothingEnum.nothing;
+          app.findChangeGrepOptions.includeMasterPages = __mg;
+          app.findChangeTextOptions.includeMasterPages = __mt;
         }
-        // Where the replacements landed: page names and frame ids (pasteboard / overset noted)
+        // Where the replacements landed: page names and frame ids (pasteboard / overset / master noted)
         var where = {}, order = [];
         for (var i = 0; i < found.length; i++) {
           var key = "overset text";
           try {
             var tf = found[i].parentTextFrames;
-            if (tf.length) key = "p." + (tf[0].parentPage ? tf[0].parentPage.name : "pasteboard") + " frame " + tf[0].id;
+            if (tf.length) {
+              var pp = tf[0].parentPage;
+              if (pp && pp.parent.constructor.name === "MasterSpread") key = "master " + pp.parent.name + " frame " + tf[0].id;
+              else key = "p." + (pp ? pp.name : "pasteboard") + " frame " + tf[0].id;
+            }
           } catch (e) {}
           if (!where[key]) { where[key] = 0; order.push(key); }
           where[key]++;

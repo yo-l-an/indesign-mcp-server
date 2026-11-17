@@ -4,6 +4,8 @@
 // (`modifies`) and its handler in this one file. Handlers reach the tool context (run, respond,
 // jsStr, jsNum, frameExpr…, lib/tool-context.js) through `this`.
 
+import { has } from '../lib/tool-context.js';
+
 export function createExportTools(ctx) {
   const definitions = [
     {
@@ -18,6 +20,7 @@ export function createExportTools(ctx) {
           filePath: { type: 'string', description: 'Output PDF file path' },
           preset: { type: 'string', description: 'Preset alias or exact PDF preset name', default: 'HighQualityPrint' },
           pageRange: { type: 'string', description: 'Pages, e.g. "1", "2-3", "1,3-5" or "all"', default: 'all' },
+          layout: { type: 'string', description: 'Only the pages of this alternate layout (pageRange then counts within it: "1-2" = its first two pages)' },
           includeBleed: { type: 'boolean', description: 'Use the document bleed', default: false },
           includeSlug: { type: 'boolean', description: 'Include the slug area', default: false },
           confirmDestructive: { type: 'boolean', description: 'Required only when the file already exists (it is overwritten)', default: false },
@@ -38,6 +41,7 @@ export function createExportTools(ctx) {
           format: { type: 'string', enum: ['PNG', 'JPEG'], default: 'PNG' },
           resolution: { type: 'number', description: 'Export resolution in dpi (e.g. 72, 100, 300)', default: 300 },
           pageRange: { type: 'string', description: 'Pages, e.g. "1", "2-3", "1,3-5" or "all"', default: 'all' },
+          layout: { type: 'string', description: 'Only the pages of this alternate layout (pageRange then counts within it)' },
           includeBleed: { type: 'boolean', description: 'Include the document bleed', default: false },
           confirmDestructive: { type: 'boolean', description: 'Required only when the folder already holds files', default: false },
         },
@@ -109,6 +113,29 @@ export function createExportTools(ctx) {
       return pages;
     },
 
+    // pageRange within an alternate layout -> 1-based positions in the document
+    async layoutPositions(layout, pageRange) {
+      const out = String(await this.run(`
+        var doc = __requireDoc();
+        var name = ${this.jsStr(layout)}, pos = [], names = {};
+        for (var i = 0; i < doc.pages.length; i++) {
+          var l = "";
+          try { l = doc.pages[i].appliedAlternateLayout.alternateLayout; } catch (e) {}
+          names[l] = 1;
+          if (l === name) pos.push(i + 1);
+        }
+        if (!pos.length) { var ls = []; for (var k in names) ls.push(k); throw new Error("Layout not found: " + name + ". Layouts: " + ls.join(", ")); }
+        pos.join(",");
+      `));
+      const all = out.split(',').map(Number);
+      const wanted = this.parsePageRange(pageRange);
+      if (!wanted) return all;
+      return wanted.map((k) => {
+        if (k > all.length) throw new Error(`Layout ${layout} has ${all.length} pages (pageRange ${pageRange})`);
+        return all[k - 1];
+      });
+    },
+
     // [1,2,3,5] -> "+1-+3,+5"
     absoluteRange(positions) {
       const parts = [];
@@ -148,7 +175,7 @@ export function createExportTools(ctx) {
       const fingerprint = fingerprints[presetName];
       // Page numbers are positions in the document (1 = first page); they are sent to InDesign as absolute
       // page numbers ("+2-+3"), so custom numbering, sections and repeated page names cannot change the meaning.
-      const positions = this.parsePageRange(pageRange);
+      const positions = has(args.layout) ? await this.layoutPositions(args.layout, pageRange) : this.parsePageRange(pageRange);
       const rangeString = positions === null ? '' : this.absoluteRange(positions);
 
       const script = `
@@ -186,7 +213,7 @@ export function createExportTools(ctx) {
           try { tmp.remove(); } catch (e) {}
         }
         if (!pdfFile.exists) throw new Error("PDF export did not create the file");
-        "PDF exported: " + pdfFile.fsName + " (requested preset " + ${this.jsStr(preset)} + ", effective preset " + (base.name === ${this.jsStr(presetName)} ? base.name : ${this.jsStr(presetName)} + " = " + base.name) + ", pages " + ${this.jsStr(positions === null ? 'all' : String(pageRange).replace(/\s+/g, ''))} + ", bleed " + ${includeBleed ? '"included"' : '"not included"'} + ", slug " + ${includeSlug ? '"included"' : '"not included"'} + ")";
+        "PDF exported: " + pdfFile.fsName + " (requested preset " + ${this.jsStr(preset)} + ", effective preset " + (base.name === ${this.jsStr(presetName)} ? base.name : ${this.jsStr(presetName)} + " = " + base.name) + ", pages " + ${this.jsStr(positions === null ? 'all' : (has(args.layout) ? `layout ${args.layout}, document positions ` + this.absoluteRange(positions).replace(/\+/g, '') : String(pageRange).replace(/\s+/g, '')))} + ", bleed " + ${includeBleed ? '"included"' : '"not included"'} + ", slug " + ${includeSlug ? '"included"' : '"not included"'} + ")";
       `;
 
       const result = await this.run(script);
@@ -201,7 +228,7 @@ export function createExportTools(ctx) {
       if (!['PNG', 'JPEG', 'JPG'].includes(fmt)) throw new Error(`Invalid format: ${format} (use PNG or JPEG)`);
       const dpi = this.jsNum(resolution, 'resolution');
       if (dpi < 1 || dpi > 2400) throw new Error(`Invalid resolution: ${resolution} (1-2400 dpi)`);
-      const pages = this.parsePageRange(pageRange);
+      const pages = has(args.layout) ? await this.layoutPositions(args.layout, pageRange) : this.parsePageRange(pageRange);
 
       const script = `
         var doc = __requireDoc();

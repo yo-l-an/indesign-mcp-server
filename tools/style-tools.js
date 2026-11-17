@@ -82,6 +82,7 @@ export function createStyleTools(ctx) {
         properties: {
           styleName: { type: 'string', description: 'Paragraph style name to modify' },
           name: { type: 'string', description: 'Same as styleName (either one)' },
+          newName: { type: 'string', description: 'Rename the style' },
           baseStyle: { type: 'string', description: 'New base style' },
           fontFamily: { type: 'string', description: 'Font family (error if not installed)' },
           fontStyle: { type: 'string', description: 'Font style: Regular, Medium, Bold, Italic, ...' },
@@ -155,6 +156,7 @@ export function createStyleTools(ctx) {
         properties: {
           styleName: { type: 'string', description: 'Character style name to modify' },
           name: { type: 'string', description: 'Same as styleName (either one)' },
+          newName: { type: 'string', description: 'Rename the style' },
           fontFamily: { type: 'string', description: 'Font family' },
           fontStyle: { type: 'string', description: 'Font style (Regular, Bold, Italic)' },
           fontSize: { type: 'number', description: 'Font size in points' },
@@ -190,6 +192,7 @@ export function createStyleTools(ctx) {
         properties: {
           styleName: { type: 'string', description: 'Object style name to modify' },
           name: { type: 'string', description: 'Same as styleName (either one)' },
+          newName: { type: 'string', description: 'Rename the style' },
           fillColor: { type: 'string', description: 'Fill color (swatch name)' },
           strokeColor: { type: 'string', description: 'Stroke color (swatch name)' },
           strokeWidth: { type: 'number', description: 'Stroke width in points' },
@@ -352,6 +355,8 @@ export function createStyleTools(ctx) {
           }
         }
       }
+      if (mode === 'modify' && has(a.newName) && /^\[/.test(name)) throw new Error(`Built-in style ${name} cannot be renamed`);
+      if (mode === 'modify' && has(a.newName)) lines.push(`if (doc.paragraphStyles.itemByName(${this.jsStr(a.newName)}).isValid) throw new Error("Paragraph style already exists: " + ${this.jsStr(a.newName)}); pStyle.name = ${this.jsStr(a.newName)};`);
 
       return `
         var doc = __requireDoc();
@@ -428,6 +433,8 @@ export function createStyleTools(ctx) {
           lines.push(`style.transparencySettings.blendingSettings.opacity = ${100 - t};`);
         }
       }
+      if (mode === 'modify' && has(a.newName) && /^\[/.test(name)) throw new Error(`Built-in style ${name} cannot be renamed`);
+      if (mode === 'modify' && has(a.newName)) lines.push(`if (doc.${coll}.itemByName(${this.jsStr(a.newName)}).isValid) throw new Error("${label} style already exists: " + ${this.jsStr(a.newName)}); style.name = ${this.jsStr(a.newName)};`);
       if (mode === 'modify' && lines.length === 0) throw new Error(`No properties given to modify for ${kind} style ${name}`);
 
       return `
