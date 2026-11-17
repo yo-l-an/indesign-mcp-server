@@ -22,6 +22,8 @@ import { has } from '../lib/tool-context.js';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const GUIDE_PATH = path.join(ROOT, 'GUIDE.md');
+// Settings no tool reaches, with their menu paths (served on demand: get_usage_guide topic manual-settings)
+export const MANUAL_SETTINGS_PATH = path.join(ROOT, 'docs', 'MANUAL-SETTINGS.md');
 export const BACKUP_FOLDER_NAME = 'InDesign Agent Backups';
 const REVIEW_ROOT_NAME = 'indesign-mcp-review';
 const REVIEW_MAX_AGE_MS = 3 * 24 * 3600 * 1000;
@@ -83,7 +85,7 @@ function __uniq(list) { var seen = {}, out = []; for (var i = 0; i < list.length
 // list (pages added since the snapshot).
 // `after`: statements run once the inventory is built (they see doc and pages), so one script can
 // also render the pages; the inventory text stays the script's result
-function inventoryScript(pageIds, knownIds = null, after = '') {
+export function inventoryScript(pageIds, knownIds = null, after = '') {
   return `
     ${JSON_ES}
     var SKIP = { Image: 1, EPS: 1, PDF: 1, PICT: 1, WMF: 1, ImportedPage: 1, SVG: 1, Graphic: 1, Group: 1 };
@@ -169,7 +171,9 @@ function inventoryScript(pageIds, knownIds = null, after = '') {
       var spr = null, side = "";
       try { spr = pg.parent.id; } catch (e) {}
       try { side = String(pg.side); } catch (e) {}
-      allPg.push({ id: pg.id, name: pg.name, spread: spr, side: side });
+      var lay = "";
+      try { lay = pg.appliedAlternateLayout.alternateLayout || ""; } catch (e) {}
+      allPg.push({ id: pg.id, name: pg.name, spread: spr, side: side, layout: lay });
       if (want && !want[pg.id] && !(known && !known[pg.id])) continue;
       var pb = pg.bounds;
       var items = [], all = pg.allPageItems;
@@ -221,21 +225,51 @@ function inventoryScript(pageIds, knownIds = null, after = '') {
 }
 
 
-// ExtendScript: every page as "id<TAB>name<TAB>index" (cheap; used to resolve page names)
-const PAGES_SCRIPT = `
+// ExtendScript: every page as "id<TAB>name<TAB>index<TAB>layout" (cheap; used to resolve page names).
+// layout: the page's alternate layout
+const PAGE_LINE_JS = `function __pageLine(pg, i) { var lay = ""; try { lay = pg.appliedAlternateLayout.alternateLayout || ""; } catch (e) {} return pg.id + "\\t" + pg.name + "\\t" + i + "\\t" + lay; }`;
+export const PAGES_SCRIPT = `
   var doc = __requireDoc();
+  ${PAGE_LINE_JS}
   var out = [];
-  for (var i = 0; i < doc.pages.length; i++) out.push(doc.pages[i].id + "\\t" + doc.pages[i].name + "\\t" + i);
+  for (var i = 0; i < doc.pages.length; i++) out.push(__pageLine(doc.pages[i], i));
   "PAGES\\n" + out.join("\\n");
 `;
+
+// Page lines -> [{ id, name, index, layout }]; layout is dropped when every page shares one
+// (a document without alternate layouts)
+export function parsePageLines(text) {
+  const pages = String(text).replace(/^PAGES\n/, '').split('\n').filter(Boolean).map((l) => {
+    const [id, name, index, layout = ''] = l.split('\t');
+    return { id: Number(id), name, index: Number(index), layout };
+  });
+  if (new Set(pages.map((p) => p.layout)).size <= 1) for (const p of pages) delete p.layout;
+  return pages;
+}
 
 // Resolve page references as the project manager says them: the page name shown in InDesign
 // ("12", "iv", "A-3"), or "+N" for the N-th page of the file. Numbers count as names.
 export function resolvePageRefs(refs, pages) {
+  const layouts = [...new Set(pages.map((p) => p.layout).filter(Boolean))];
   return refs.map((ref) => {
     const s = String(ref).trim();
     const byName = pages.filter((p) => p.name === s);
     if (byName.length === 1) return byName[0];
+    // "2" for a page named "02" (numbering with leading zeros), when only one page has that number
+    if (!byName.length && /^\d+$/.test(s)) {
+      const byNumber = pages.filter((p) => /^\d+$/.test(p.name) && Number(p.name) === Number(s));
+      if (byNumber.length === 1) return byNumber[0];
+    }
+    // "Layout:page": a page of one alternate layout (page names repeat from one layout to the next)
+    const lay = layouts.find((l) => s.startsWith(l + ':'));
+    if (lay) {
+      const name = s.slice(lay.length + 1).trim();
+      const inLayout = pages.filter((p) => p.layout === lay);
+      const nth = name.match(/^\+(\d+)$/);
+      const hit = nth ? inLayout[Number(nth[1]) - 1] : inLayout.find((p) => p.name === name);
+      if (hit) return hit;
+      throw new Error(`Page "${name}" not found in layout "${lay}". Its pages: ${inLayout.map((p) => p.name).join(', ')}`);
+    }
     const abs = s.match(/^\+(\d+)$/);
     if (abs) {
       const p = pages[Number(abs[1]) - 1];
@@ -243,7 +277,11 @@ export function resolvePageRefs(refs, pages) {
       return p;
     }
     if (byName.length > 1) {
-      throw new Error(`Page name "${s}" is used ${byName.length} times (sections). Use the absolute position: ${byName.map((p) => `"+${p.index + 1}"`).join(', ')}`);
+      const perLayout = byName.every((p) => p.layout) && new Set(byName.map((p) => p.layout)).size === byName.length;
+      const how = perLayout
+        ? `once per alternate layout. Name the layout: ${byName.map((p) => `"${p.layout}:${s}"`).join(', ')}`
+        : `sections. Use the absolute position: ${byName.map((p) => `"+${p.index + 1}"`).join(', ')}`;
+      throw new Error(`Page name "${s}" is used ${byName.length} times (${how})`);
     }
     const names = pages.map((p) => p.name);
     const shown = names.length > 16 ? `${names.slice(0, 8).join(', ')} … ${names.slice(-6).join(', ')}` : names.join(', ');
@@ -329,10 +367,7 @@ export function createReviewTools(ctx) {
   };
   const readInventory = async (pageIds, knownIds) => parseInventory(await run(inventoryScript(pageIds, knownIds)));
 
-  const readPages = async () => String(await run(PAGES_SCRIPT)).replace(/^PAGES\n/, '').split('\n').filter(Boolean).map((l) => {
-    const [id, name, index] = l.split('\t');
-    return { id: Number(id), name, index: Number(index) };
-  });
+  const readPages = async () => parsePageLines(await run(PAGES_SCRIPT));
 
   // pages (names / "+N") or pageIndexes (0-based) -> page ids; allPages -> null (= every page).
   // getPages is only called when names or indexes have to be resolved
@@ -393,14 +428,15 @@ export function createReviewTools(ctx) {
   const docFrom = ([name, filePath, modified, converted, id]) => ({ name, filePath: filePath && fs.existsSync(filePath) ? filePath : null, modified: modified === '1', converted: converted === '1', id: Number(id) });
   const activeDoc = async () => docFrom(String(await run(docInfoScript)).split('\n'));
   // The document and its page list in one round trip
-  const contextScript = `${docInfoScript.trim().replace(/;$/, '')} + "\\nPAGES\\n" + (function () {
+  const contextScript = `${PAGE_LINE_JS}
+    ${docInfoScript.trim().replace(/;$/, '')} + "\\nPAGES\\n" + (function () {
       var out = [];
-      for (var i = 0; i < doc.pages.length; i++) out.push(doc.pages[i].id + "\\t" + doc.pages[i].name + "\\t" + i);
+      for (var i = 0; i < doc.pages.length; i++) out.push(__pageLine(doc.pages[i], i));
       return out.join("\\n");
     })();`;
   const readContext = async () => {
     const [info, list] = String(await run(contextScript)).split('\nPAGES\n');
-    const pages = (list || '').split('\n').filter(Boolean).map((l) => { const [id, name, index] = l.split('\t'); return { id: Number(id), name, index: Number(index) }; });
+    const pages = parsePageLines(list || '');
     return { doc: docFrom(info.split('\n')), pages };
   };
 
@@ -441,8 +477,8 @@ export function createReviewTools(ctx) {
     {
       name: 'get_usage_guide',
       modifies: false,
-      description: 'Workflow guide: read once per session, before the first change to a document. Five steps (scope, prepare_edit, surgical change, review_compare, close) plus page names, ids, backups, saving, converted documents, errors and improvement notes.',
-      inputSchema: { type: 'object', properties: {} },
+      description: 'Workflow guide: read once per session, before the first change to a document. Five steps (scope, prepare_edit, surgical change, review_compare, close) plus page names, ids, backups, saving, new documents (kickstart questions), masters, layouts, errors and improvement notes. topic "manual-settings": the settings no tool reaches, with the menu path to give the user.',
+      inputSchema: { type: 'object', properties: { topic: { type: 'string', enum: ['workflow', 'manual-settings'], description: 'workflow (default): the guide; manual-settings: settings the user changes by hand, with their menu path', default: 'workflow' } } },
     },
     {
       name: 'find_text',
@@ -561,7 +597,8 @@ export function createReviewTools(ctx) {
 
   const handlers = {};
 
-  handlers.get_usage_guide = async () => {
+  handlers.get_usage_guide = async (args = {}) => {
+    if (args.topic === 'manual-settings') return { content: [{ type: 'text', text: fs.readFileSync(MANUAL_SETTINGS_PATH, 'utf8') }] };
     ctx.workflow.guideRead = true;
     return { content: [{ type: 'text', text: readGuide() }] };
   };
@@ -576,6 +613,10 @@ export function createReviewTools(ctx) {
       app.findTextPreferences = NothingEnum.nothing;
       app.findGrepPreferences = NothingEnum.nothing;
       var found;
+      // masters too (text on a master shows on every page that uses it); not when pages are named
+      var __mg = app.findChangeGrepOptions.includeMasterPages, __mt = app.findChangeTextOptions.includeMasterPages;
+      app.findChangeGrepOptions.includeMasterPages = ${pageIds ? 'false' : 'true'};
+      app.findChangeTextOptions.includeMasterPages = ${pageIds ? 'false' : 'true'};
       try {
         ${args.useGrep ? `
           app.findGrepPreferences.findWhat = ${jsStr(args.text)};
@@ -589,13 +630,19 @@ export function createReviewTools(ctx) {
       } finally {
         app.findTextPreferences = NothingEnum.nothing;
         app.findGrepPreferences = NothingEnum.nothing;
+        app.findChangeGrepOptions.includeMasterPages = __mg;
+        app.findChangeTextOptions.includeMasterPages = __mt;
       }
       var out = [], total = 0;
       for (var i = 0; i < found.length; i++) {
         var t = found[i], where = "overset", pg = null, fid = "-";
         try {
           var tf = t.parentTextFrames;
-          if (tf.length) { fid = tf[0].id; pg = tf[0].parentPage; where = pg ? ("p." + pg.name + " (pageIndex " + pg.documentOffset + ")") : "pasteboard"; }
+          if (tf.length) {
+            fid = tf[0].id; pg = tf[0].parentPage;
+            if (pg && pg.parent.constructor.name === "MasterSpread") { where = "master " + pg.parent.name + " (shown on every page that uses it)"; pg = null; }
+            else where = pg ? ("p." + pg.name + " (pageIndex " + pg.documentOffset + ")") : "pasteboard";
+          }
         } catch (e) {}
         if (want && !(pg && want[pg.id])) continue;
         total++;
@@ -902,6 +949,8 @@ export function createReviewTools(ctx) {
         await renderPages(more.pages, before.resolution, afterDir);
         return more.pages;
       },
+      // objects aligned on guides / columns during this task (tools/align-tools.js)
+      alignments: () => ctx.workflow.alignments?.get(id) || new Map(),
       thumbnails: async (pages) => {
         const thumbDir = path.join(afterDir, 'thumbs');
         fs.mkdirSync(thumbDir, { recursive: true });
