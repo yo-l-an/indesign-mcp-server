@@ -8,21 +8,18 @@ A document built from scratch starts with its technical frame, settled with the 
 
 1. **Ask the kickstart questions** with your client's question tool (multiple choice, at most 4 questions per round, the recommended answer first): one round for the format, the next for the grid. The table is a starting point: drop what the brief or a template already answers (`get_layout_setup` on the template), recommend the values the project calls for (3 mm bleed for a printer who asks, 8 columns for a newspaper, 0 mm for a screen deck), and add what the project raises (spine width, folding, languages, accessible export).
 
-   | Question | A (recommended) | B | C | D |
+   | Potential Question | A (recommended) | B | C | D |
    |---|---|---|---|---|
-   | Where to save the file | (a folder the user names) | | | |
+   | Where to save the file | (a folder the user names) | Temporary in Documents folder | | |
    | Format and orientation | A4 portrait | A4 landscape | A5 portrait | Other size |
    | Pages | Facing pages (brochure, book), first page on the right | Single pages (presentation, poster, screen) | Facing, first page on the left | Other |
-   | Binding | Left (left-to-right reading) | Right (right-to-left) | | |
    | Bleed | 5 mm | 3 mm | None (0 mm, screen only) | Other |
    | Margins | 15 mm all round | 20 mm, inside 25 mm (thick book) | 10 mm (flyer, poster) | Other |
    | Column grid | 12 columns | 6 columns | 24 columns | Other |
-   | Gutter | 4 mm | 5 mm | 3 mm | Other |
    | Rows (modular grid) | None | 6 rows | 8 rows | Other |
    | Baseline grid (= body leading) | 12 pt from the top margin | 14 pt | None | Other |
-   | Page numbers | Arabic 1, 2, 3 at the bottom outside corner | 01, 02, 03 | None | Other |
-   | Output | Print (CMYK) | Screen (RGB) | Both | |
-   | Layers | Fonds / Images / Textes | One layer | | Other |
+   | Page numbers | Arabic 1, 2, 3 at the bottom outside | 01, 02, 03 | None | Other |
+   | Output | Print (CMYK) | Screen (RGB) | | |
    | Fonts | Title and body fonts named in the brief | (propose two installed families: `list_fonts`) | | |
 
 2. **Build the frame**, in this order:
