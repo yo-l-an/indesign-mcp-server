@@ -68,7 +68,7 @@ create_path_from_svg({
 ## Tools
 
 <!-- TOOLS:START -->
-_143 tools. Generated from the server's tool schemas by `npm run docs`._
+_144 tools. Generated from the server's tool schemas by `npm run docs`._
 
 ### Workflow, review and backups
 
@@ -1939,6 +1939,14 @@ Read NOTES.md, the improvement notes written so far for the author of this serve
 _No parameters._
 
 ### Other
+
+#### `check_server_updates`
+
+First step when a tool fails, misbehaves or a feature is missing: if the server folder is a git clone, fetch and fast-forward to the new commits of its upstream branch (the fix may already exist), then ask the user to restart the MCP server. A downloaded copy (no git) has nothing to update. Local changes in the server folder are never overwritten.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `apply` | boolean | false = only list the new commits Default: `true`. |
 
 #### `move_into_group`
 

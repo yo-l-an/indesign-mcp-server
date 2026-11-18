@@ -53,7 +53,7 @@ export class InDesignMCPServer {
         capabilities: {
           tools: { listChanged: true },
         },
-        instructions: 'Surgical InDesign corrections for a project manager. Before the first change to a document in a session, read get_usage_guide: the five-step workflow (scope, prepare_edit, change by id, review_compare, close), page names, backups. Building a layout (new document, grids, masters, alternate layouts): get_usage_guide topic "layout". Client files (commented PDF, Word brief or feedback): read_feedback / read_source_document, then triage with the project manager before changing anything. Backups are permanent: delete them only on the user\'s explicit request. A bug, a missing feature, a better way found, or a fix you made to the server files: add_improvement_note (NOTES.md for the author).',
+        instructions: 'Surgical InDesign corrections for a project manager. Before the first change to a document in a session, read get_usage_guide: the five-step workflow (scope, prepare_edit, change by id, review_compare, close), page names, backups. Building a layout (new document, grids, masters, alternate layouts): get_usage_guide topic "layout". Client files (commented PDF, Word brief or feedback): read_feedback / read_source_document, then triage with the project manager before changing anything. Backups are permanent: delete them only on the user\'s explicit request. A tool fails or a feature is missing: check_server_updates first (a git clone of the server may already have the fix). A bug, a missing feature, a better way found, or a fix you made to the server files: add_improvement_note (NOTES.md for the author).',
       }
     );
 

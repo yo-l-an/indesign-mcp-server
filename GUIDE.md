@@ -168,9 +168,10 @@ Print booklet, colour settings, text variables, tables of contents, preferencesâ
 
 `NOTES.md` in the server folder carries what you learn to the project's author, who chooses the real implementation.
 
+- **First, at a difficulty** (a tool fails or misbehaves, a feature is missing): `check_server_updates`, once per session. A git clone of the server fetches the new commits and fast-forwards to them; then ask the user to restart the MCP server and try the step again. A downloaded copy, an up-to-date clone or no network: carry on with the bullets below.
 - **No tool for a case** (a property no tool exposes, a one-off batch, a check): `run_script({ purpose, code, missing, ids })` and carry on. It runs ES3 ExtendScript on the active document (`doc`, `__findById`, mm from each page's top-left; the last expression is the result), joins the snapshot through `ids` / `pageIndex`, and notes itself in NOTES.md with `missing`. Files, system, menus, saving and exporting stay with their tools.
 - **A bug, a missing feature, a better way**: `read_improvement_notes` (already there?), then `add_improvement_note({ kind, title, details, tool })`. In `details`: what you tried, what happened, how to reproduce it, what would help; generic, with no client names or client text.
 - **A wrong tool or a missing feature that blocks the work**: if you can edit files, fix it in the tool's module (`tools/*-tools.js`; `read_improvement_notes` shows the server folder), keep the change small, and ask the user to restart the MCP server. Then `add_improvement_note({ status: "fixed-locally", filesChanged: ["tools/export-tools.js: what changed"], details })`. Commits and pushes stay with the author.
 - **Before you finish**: tell the user in one short paragraph that `NOTES.md` holds improvements (and any local fixes) ready to hand to the project's author.
 
-**Done when** every workaround, bug, wish and local change of the session is in `NOTES.md`, and the user has had that paragraph.
+**Done when** updates were checked at the first difficulty, every workaround, bug, wish and local change of the session is in `NOTES.md`, and the user has had that paragraph.

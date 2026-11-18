@@ -3,12 +3,16 @@
 //   add_improvement_note    append an observation, workaround, bug, wanted feature or local fix
 //                           to NOTES.md at the root of the server
 //   read_improvement_notes  read NOTES.md (check what is already noted before adding)
+//   check_server_updates    when the server is a git clone: fetch, and fast-forward to the new
+//                           commits of its upstream branch (a fix may already exist); a downloaded
+//                           copy has nothing to update
 //
 // Agents often run without push rights on the repository: NOTES.md is how their findings and
 // local fixes reach the author, who decides on the real implementation. The file is git-ignored
 // (it may describe client work) and is only ever appended to by the tools.
 
 import fs from 'fs';
+import { execFile } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -26,6 +30,35 @@ Written by agents while using the InDesign MCP server: what they found, what the
 they changed locally. For the author of the project, who chooses the real implementation.
 Each entry: kind, status (wanted / fixed-locally / workaround-found), the tool, the files changed.
 `;
+
+// git in the server folder, no shell; resolves { ok, out } (never rejects)
+const git = (root, args, timeout = 30000) => new Promise((resolve) => {
+  execFile('git', args, { cwd: root, timeout, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } }, (err, stdout, stderr) => {
+    resolve({ ok: !err, out: String(err ? (stderr || err.message) : stdout).trim() });
+  });
+});
+
+// Is the server a git clone with an upstream branch, and is it behind? With apply, fast-forward
+// to it (only a clean tree: local fixes stay untouched). Returns { state, text }:
+// copy | no-upstream | offline | up-to-date | behind | updated | local-changes | failed
+export async function checkServerUpdates(root = ROOT, { apply = true } = {}) {
+  if (!fs.existsSync(path.join(root, '.git'))) return { state: 'copy', text: 'The server is a downloaded copy, not a git clone: there are no updates to fetch. Carry on (note the difficulty with add_improvement_note).' };
+  const up = await git(root, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']);
+  if (!up.ok) return { state: 'no-upstream', text: 'The server is a git clone without an upstream branch: nothing to compare with. Carry on.' };
+  const fetched = await git(root, ['fetch', '--quiet']);
+  if (!fetched.ok) return { state: 'offline', text: `Could not fetch updates (${fetched.out.split('\n')[0]}). Carry on with the current version.` };
+  const behind = Number((await git(root, ['rev-list', '--count', 'HEAD..@{u}'])).out) || 0;
+  if (!behind) return { state: 'up-to-date', text: `The server is up to date with ${up.out}. Carry on: the difficulty is new (note it with add_improvement_note).` };
+  const log = (await git(root, ['log', '--oneline', '--no-decorate', '-20', 'HEAD..@{u}'])).out;
+  const list = `${behind} new commit(s) on ${up.out}:\n${log}`;
+  if (!apply) return { state: 'behind', text: `${list}\nRun check_server_updates again without apply: false to update.` };
+  const dirty = (await git(root, ['status', '--porcelain', '--untracked-files=no'])).out;
+  if (dirty) return { state: 'local-changes', text: `${list}\nNot updated: the server folder has local changes (local fixes?):\n${dirty}\nTell the user; the author merges them. Carry on with the current version.` };
+  const merged = await git(root, ['merge', '--ff-only', '--quiet', '@{u}']);
+  if (!merged.ok) return { state: 'failed', text: `${list}\nCould not fast-forward (${merged.out.split('\n')[0]}): the local branch has its own commits. Carry on with the current version and tell the user.` };
+  const deps = (await git(root, ['diff', '--name-only', `HEAD@{1}`, 'HEAD', '--', 'package.json', 'package-lock.json'])).out;
+  return { state: 'updated', text: `Updated: ${list}\nThe new code loads when the MCP server restarts: ask the user to restart it${deps ? ' (the dependencies changed: run npm install in the server folder first)' : ''}, then try the step again.` };
+}
 
 // Append one note to NOTES.md; returns { n, file }
 export function appendNote(args) {
@@ -75,6 +108,17 @@ export function createNotesTools() {
       },
     },
     {
+      name: 'check_server_updates',
+      modifies: false,
+      description: 'First step when a tool fails, misbehaves or a feature is missing: if the server folder is a git clone, fetch and fast-forward to the new commits of its upstream branch (the fix may already exist), then ask the user to restart the MCP server. A downloaded copy (no git) has nothing to update. Local changes in the server folder are never overwritten.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          apply: { type: 'boolean', description: 'false = only list the new commits', default: true },
+        },
+      },
+    },
+    {
       name: 'read_improvement_notes',
       modifies: false,
       description: 'Read NOTES.md, the improvement notes written so far for the author of this server (bugs, wanted features, workarounds, local fixes), with the path of the server folder.',
@@ -86,6 +130,10 @@ export function createNotesTools() {
     add_improvement_note: async (args) => {
       const { n, file, status } = appendNote(args);
       return { content: [{ type: 'text', text: `Note N${n} written to ${file}.\nBefore you finish, tell the user in one short paragraph: improvements to the server are needed, you wrote them in NOTES.md${status === 'fixed-locally' ? ' (with the local fixes you made)' : ''}, and the notes are ready to be given to the author of the project.` }] };
+    },
+    check_server_updates: async (args) => {
+      const { text } = await checkServerUpdates(ROOT, { apply: args.apply !== false });
+      return { content: [{ type: 'text', text }] };
     },
     read_improvement_notes: async () => {
       const file = notesPath();
