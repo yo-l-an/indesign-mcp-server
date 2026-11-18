@@ -68,7 +68,7 @@ create_path_from_svg({
 ## Tools
 
 <!-- TOOLS:START -->
-_141 tools. Generated from the server's tool schemas by `npm run docs`._
+_142 tools. Generated from the server's tool schemas by `npm run docs`._
 
 ### Workflow, review and backups
 
@@ -1935,6 +1935,18 @@ Write a note for the author of this server in NOTES.md: a bug, a missing feature
 Read NOTES.md, the improvement notes written so far for the author of this server (bugs, wanted features, workarounds, local fixes), with the path of the server folder.
 
 _No parameters._
+
+### Other
+
+#### `paste_into`
+
+Put existing objects inside a shape (Paste Into): the shape (rectangle, oval, polygon) becomes their mask and they keep their page position. Two or more objects are grouped first (name, default "Contenu"), so they move as one inside the mask. The objects get new ids (listed old → new); the clipboard then holds the cut objects. The shape must be empty and on the same spread.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `ids` *(required)* | number[] | Ids of the objects to put inside the shape |
+| `shapeId` *(required)* | number | Id of the empty shape that becomes the mask |
+| `name` | string | Name of the group made from two or more objects Default: `"Contenu"`. |
 
 <!-- TOOLS:END -->
 

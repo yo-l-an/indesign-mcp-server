@@ -954,6 +954,8 @@ export function createReviewTools(ctx) {
       },
       // objects aligned on guides / columns during this task (tools/align-tools.js)
       alignments: () => ctx.workflow.alignments?.get(id) || new Map(),
+      // objects re-created under new ids by paste_into / move_into_group during this task
+      idMoves: () => ctx.workflow.idMoves?.get(id) || new Map(),
       thumbnails: async (pages) => {
         const thumbDir = path.join(afterDir, 'thumbs');
         fs.mkdirSync(thumbDir, { recursive: true });

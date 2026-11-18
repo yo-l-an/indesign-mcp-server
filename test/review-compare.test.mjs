@@ -134,3 +134,32 @@ test('the effects of an object are compared and named in the table', async () =>
   assert.match(out.table, /Effects/);
   assert.match(out.table, /drop shadow/);
 });
+
+test('objects pasted into a shape under new ids read as moved into it, not removed and added', async () => {
+  const { recordIdMoves } = await import('../lib/review.js');
+  const oval = { id: 30, type: 'Oval', bounds: [20, 20, 120, 140] };
+  const members = [{ id: 10, type: 'TextFrame', bounds: [30, 30, 50, 100], text: 'Bonjour' }, { id: 11, type: 'Rectangle', bounds: [60, 40, 90, 80] }];
+  const before = inv([page(1, 1, [oval, ...members])]);
+  // after paste_into: the members are the same objects under new ids, inside a new group in the oval
+  const after = inv([page(1, 1, [oval, { id: 41, type: 'Group', name: 'Contenu', bounds: [30, 30, 90, 100] }, { ...members[0], id: 42 }, { ...members[1], id: 43 }])]);
+  const workflow = { lastSnapshot: 'snap-1' };
+  recordIdMoves(workflow, [{ from: 10, to: 42, into: { type: 'Oval', id: 30 } }, { from: 11, to: 43, into: { type: 'Oval', id: 30 } }]);
+  const source = memorySource({ 'before:1': blank(), 'after:1': blank() });
+  source.idMoves = () => workflow.idMoves.get('snap-1');
+  const out = await compareSnapshots({ before, after, source, language: 'en' });
+  assert.deepEqual(out.rows.filter((r) => r.kind === 'Removed'), [], 'nothing removed');
+  const moved = out.rows.filter((r) => r.property === 'Moved into');
+  assert.deepEqual(moved.map((r) => [r.element.replace(/ «.*/, ''), r.after, r.kind]), [['Text frame #42', 'Ellipse #30', 'Moved'], ['Rectangle #43', 'Ellipse #30', 'Moved']]);
+  assert.ok(out.rows.some((r) => r.kind === 'Added' && /Group #41/.test(r.element)), 'the new group is added');
+  // a group re-created by move_into_group: paired with its old id, its new member placed into it
+  const grp = { id: 50, type: 'Group', name: 'Logo', bounds: [10, 10, 30, 60] };
+  const b2 = inv([page(1, 1, [grp, { id: 12, type: 'Rectangle', bounds: [40, 10, 60, 30] }])]);
+  const a2 = inv([page(1, 1, [{ ...grp, id: 55, bounds: [10, 10, 60, 60] }, { id: 12, type: 'Rectangle', bounds: [40, 10, 60, 30] }])]);
+  const w2 = { lastSnapshot: 's2' };
+  recordIdMoves(w2, [{ from: 50, to: 55 }, { from: 12, to: 12, into: { type: 'Group', id: 55, name: 'Logo' } }]);
+  const s2 = memorySource({ 'before:1': blank(), 'after:1': blank() });
+  s2.idMoves = () => w2.idMoves.get('s2');
+  const o2 = await compareSnapshots({ before: b2, after: a2, source: s2, language: 'en' });
+  assert.deepEqual(o2.rows.map((r) => [r.element.replace(/ «.*/, ''), r.property, r.kind]), [['Group #55', 'Position / size', 'Modified'], ['Rectangle #12', 'Moved into', 'Moved']]);
+  assert.match(o2.rows[1].after, /Group #55 «Logo»/);
+});

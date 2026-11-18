@@ -1370,6 +1370,41 @@ async function main() {
     await call('delete_object', { id: star, confirmDestructive: true }); await call('delete_object', { id: t, confirmDestructive: true });
   });
 
+  await test('paste_into: a text frame and two rectangles inside an oval, grouped, in place; the review reads as a move', async () => {
+    const name = await newDoc({ preset: 'A5' });
+    testDoc = name;
+    await call('create_color_swatch', { name: 'PasteRed', colorValues: [0, 100, 100, 0] });
+    const oval = idOf(await call('create_ellipse', { x: 20, y: 20, width: 100, height: 80 }));
+    const tf = idOf(await call('create_text_frame', { content: 'Inside', x: 30, y: 30, width: 70, height: 20 }));
+    const r1 = idOf(await call('create_rectangle', { x: 10, y: 60, width: 60, height: 50, fillColor: 'PasteRed' }));
+    const r2 = idOf(await call('create_rectangle', { x: 90, y: 70, width: 40, height: 40, fillColor: 'PasteRed' }));
+    await call('prepare_edit', { pages: ['1'], reason: 'paste into test', backup: false, listObjects: false });
+    const out = await call('paste_into', { ids: [tf, r1, r2], shapeId: oval });
+    assert(/clipboard now holds the cut objects/.test(out), out);
+    const pairs = new Map([...out.matchAll(/(\d+) → (\d+)/g)].map((m) => [Number(m[1]), Number(m[2])]));
+    for (const id of [tf, r1, r2]) assert(pairs.has(id) && pairs.get(id) !== id, `new id for ${id}: ${out}`);
+    const items = await call('list_page_items', { pageIndex: 0 });
+    const group = items.match(/Group id=(\d+)[^\n]*name="Contenu"/);
+    assert(group, `one group named Contenu: ${items}`);
+    for (const id of [tf, r1, r2]) assert(new RegExp(`id=${pairs.get(id)}\\b[^\\n]*group=${group[1]}`).test(items), `${pairs.get(id)} is in the group: ${items}`);
+    assert(!new RegExp(`id=${tf}\\b`).test(items), 'old ids are gone');
+    const g = geo(await call('get_object_info', { id: Number(group[1]) }));
+    near(g.x, 10, 0.05, 'content keeps its page position (x)'); near(g.y, 30, 0.05, 'content keeps its page position (y)');
+    {   // clipped by the oval: red inside the oval, nothing outside it (r1's corner at 12, 108 lies outside the ellipse)
+      const c = await callRaw('render_preview', { pageIndex: 0, resolution: 72 });
+      const png = readPng(Buffer.from(c.find((q) => q.type === 'image').data, 'base64'));
+      const at = (xmm, ymm) => png.px(Math.round(xmm * 72 / 25.4), Math.round(ymm * 72 / 25.4));
+      assert(isRed(at(60, 80)), `inside the oval: ${at(60, 80)}`);
+      assert(!isRed(at(12, 108)) && !isRed(at(128, 108)), `cut by the oval: ${at(12, 108)} / ${at(128, 108)}`);
+    }
+    const review = await call('review_compare', { language: 'en', maxImages: 0 });
+    assert(/Moved into/.test(review) && !/Removed/.test(review), `review reads as a move into the shape: ${review.slice(0, 1500)}`);
+    await fails('paste_into', { ids: [Number(group[1])], shapeId: oval }, /already has content/);
+    const t2 = idOf(await call('create_text_frame', { content: 'x', x: 10, y: 150, width: 20, height: 10 }));
+    await fails('paste_into', { ids: [t2], shapeId: t2 }, /also in ids/);
+    await closeDoc(name);
+  });
+
   await test('duplicate_object, align_objects, distribute_objects', async () => {
     const r = idOf(await call('create_rectangle', { x: 10, y: 10, width: 20, height: 10, fillColor: 'BandGreen' }));
     let out = await call('duplicate_object', { id: r, count: 3, offsetX: 30, offsetY: 5 });

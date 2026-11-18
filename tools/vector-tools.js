@@ -9,6 +9,7 @@ import { jsStr, jsJson, jsNum, jsEnum } from '../lib/script-runtime.js';
 import { svgPathToSubpaths, fitSubpaths, polygonPoints } from '../lib/svg-path.js';
 import { has } from '../lib/tool-context.js';
 import { PDF_PROPS, pdfPlacement, pdfPlaceScript } from '../lib/pdf-place.js';
+import { recordIdMoves } from '../lib/review.js';
 
 
 const OBJECT_PROPS = {
@@ -338,6 +339,20 @@ export function createVectorTools(ctx) {
           ...PDF_PROPS,
         },
         required: ['shapeId', 'imagePath'],
+      },
+    },
+    {
+      name: 'paste_into',
+      modifies: true,
+      description: 'Put existing objects inside a shape (Paste Into): the shape (rectangle, oval, polygon) becomes their mask and they keep their page position. Two or more objects are grouped first (name, default "Contenu"), so they move as one inside the mask. The objects get new ids (listed old → new); the clipboard then holds the cut objects. The shape must be empty and on the same spread.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          ids: { type: 'array', items: { type: 'number' }, description: 'Ids of the objects to put inside the shape' },
+          shapeId: { type: 'number', description: 'Id of the empty shape that becomes the mask' },
+          name: { type: 'string', description: 'Name of the group made from two or more objects', default: 'Contenu' },
+        },
+        required: ['ids', 'shapeId'],
       },
     },
     {
@@ -875,6 +890,67 @@ export function createVectorTools(ctx) {
       "Image placed in shape: " + __describePath(shape) + ${info};
     `;
     return respond(await run(script), 'Place Image In Shape');
+  };
+
+  handlers.paste_into = async (args) => {
+    if (!Array.isArray(args.ids) || !args.ids.length) throw new Error('ids: the objects to put inside the shape');
+    const ids = args.ids.map((v, i) => jsNum(v, `ids[${i}]`));
+    const shapeId = jsNum(args.shapeId, 'shapeId');
+    if (ids.includes(shapeId)) throw new Error(`The shape ${shapeId} is also in ids: list only the objects that go inside it`);
+    const name = has(args.name) ? String(args.name) : 'Contenu';
+    // Paste Into is a menu action: it needs a layout window on the document, and cuts through the clipboard
+    const script = `
+      var doc = __requireDoc();
+      var shape = __findById(doc, ${shapeId});
+      if (!shape) throw new Error("No object with id ${shapeId}");
+      var kind = shape.constructor.name;
+      if (kind !== "Rectangle" && kind !== "Oval" && kind !== "Polygon") throw new Error("Object ${shapeId} is a " + kind + " and cannot hold content (use a rectangle, oval or polygon)");
+      if (shape.pageItems.length || shape.graphics.length) throw new Error("Shape ${shapeId} already has content: Paste Into would replace it. Use an empty shape, or remove the content first");
+      function spreadOf(it) { var s = it.parent; try { while (s && !(s instanceof Spread) && !(s instanceof MasterSpread)) s = s.parent; } catch (e) {} return s; }
+      var ids = ${jsJson(ids)}, items = [];
+      for (var i = 0; i < ids.length; i++) {
+        var it = __findById(doc, ids[i]);
+        if (!it) throw new Error("No object with id " + ids[i]);
+        if (spreadOf(it) !== spreadOf(shape)) throw new Error("Object " + ids[i] + " is on another spread than shape ${shapeId}: move it to the shape's spread first");
+        items.push(it);
+      }
+      var content = items.length > 1 ? doc.groups.add(items) : items[0];
+      if (items.length > 1) content.name = ${jsStr(name)};
+      // every object pasted gets a new id: pair them by their order (front to back, nested objects included)
+      var oldIds = [content.id], nested = content.allPageItems;
+      for (var j = 0; j < nested.length; j++) oldIds.push(nested[j].id);
+      var gb = content.geometricBounds;
+      var win = null;
+      if (!doc.layoutWindows.length) win = doc.windows.add();
+      try {
+        app.select(content);
+        app.cut();
+        app.select(shape);
+        app.pasteInto();
+      } finally {
+        try { app.select(NothingEnum.NOTHING); } catch (eSel) {}
+      }
+      if (!shape.pageItems.length) throw new Error("Paste Into left shape ${shapeId} empty: the objects are on the clipboard (paste them back with Edit > Paste in Place)");
+      var pasted = shape.pageItems[0].getElements()[0];
+      var nb = pasted.geometricBounds;
+      if (Math.abs(nb[0] - gb[0]) > 0.001 || Math.abs(nb[1] - gb[1]) > 0.001) pasted.move(undefined, [gb[1] - nb[1], gb[0] - nb[0]]);
+      if (win) { try { win.close(); } catch (eWin) {} }
+      var newIds = [pasted.id], nn = pasted.allPageItems;
+      for (var k = 0; k < nn.length; k++) newIds.push(nn[k].id);
+      var pairs = [];
+      for (var m = ${ids.length > 1 ? 1 : 0}; m < oldIds.length && m < newIds.length; m++) pairs.push(oldIds[m] + ":" + newIds[m]);
+      var shapeName = ""; try { shapeName = shape.name; } catch (eN) {}
+      "Pasted into " + __describePath(shape) + "\\nContent: " + __describe(pasted) + (pasted.name ? " name=" + pasted.name : "") +
+        "\\n@@MOVES " + kind + "|" + pairs.join(",") + "|" + shapeName;
+    `;
+    const out = String(await run(script));
+    const [text, tail = ''] = out.split('\n@@MOVES ');
+    const [type, pairs = '', ...rest] = tail.split('|');
+    const shapeName = rest.join('|');
+    const into = { type, id: shapeId, ...(shapeName && !shapeName.startsWith('<') ? { name: shapeName } : {}) };
+    const moves = pairs.split(',').filter(Boolean).map((p) => { const [from, to] = p.split(':').map(Number); return { from, to, into }; });
+    recordIdMoves(ctx.workflow, moves);
+    return respond(`${text}\nNew ids (old → new): ${moves.map((m) => `${m.from} → ${m.to}`).join(', ')}\nThe clipboard now holds the cut objects.`, 'Paste Into');
   };
 
   handlers.duplicate_object = async (args) => {
