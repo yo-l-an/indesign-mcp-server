@@ -43,7 +43,7 @@ test('scripts run one at a time', async () => {
 });
 
 // The generated wrapper, run against a tiny stand-in for the ExtendScript globals
-function runWrapper(script) {
+function runWrapper(script, prefs = { userInteractionLevel: 1 }) {
   const files = {};
   class File {
     constructor(p) { this.p = p; }
@@ -52,9 +52,9 @@ function runWrapper(script) {
   }
   const ctx = {
     File,
-    app: { documents: { length: 0 }, scriptPreferences: { userInteractionLevel: 1 } },
+    app: { documents: { length: 0 }, scriptPreferences: prefs },
     UserInteractionLevels: { NEVER_INTERACT: 0 },
-    MeasurementUnits: {}, RulerOrigin: {},
+    MeasurementUnits: {}, RulerOrigin: {}, AutoEnum: { AUTO_VALUE: 'auto' },
   };
   vm.createContext(ctx);
   vm.runInContext(buildWrapper(script, '/r.txt'), ctx);
@@ -65,6 +65,12 @@ test('wrapper writes the envelope: value, no value, thrown error', () => {
   assert.equal(runWrapper('"Er" + "ror: just text";'), 'OK\nError: just text');
   assert.equal(runWrapper('var x = 1;'), 'OK-');
   assert.match(runWrapper('throw new Error("Style not found");'), /^ERR n\/a \S+\nStyle not found$/);
+});
+
+test('wrapper: script units are the default while a tool runs, and given back afterwards', () => {
+  const prefs = { userInteractionLevel: 1, measurementUnit: 'mm' };   // left by another script
+  assert.equal(runWrapper('app.scriptPreferences.measurementUnit;', prefs), 'OK\nauto');
+  assert.equal(prefs.measurementUnit, 'mm');
 });
 
 test('a tool whose script throws fails through tools/call', async () => {
