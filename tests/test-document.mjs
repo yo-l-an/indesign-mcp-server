@@ -239,7 +239,11 @@ await step('render_preview returns an image', async () => {
 });
 
 await step('safety: destructive tools need confirmDestructive', async () => {
+  // overwriting an existing file needs the confirmation; a new file does not
+  fs.writeFileSync(PDF, 'placeholder');
   await fails('export_pdf', { filePath: PDF }, /confirm/i);
+  assert(fs.readFileSync(PDF, 'utf8') === 'placeholder', 'a refused export leaves the file as it was');
+  fs.unlinkSync(PDF);
   await fails('execute_indesign_code', { code: 'app.version' }, /disabled|INDESIGN_ALLOW_ARBITRARY_CODE/i);
 });
 
