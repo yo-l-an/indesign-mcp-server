@@ -18,6 +18,7 @@ import path from 'path';
 import zlib from 'zlib';
 import { fileURLToPath } from 'url';
 import { deltaE } from '../lib/color.js';
+import { writeBleedPdf } from './fixtures/bleed-pdf.mjs';
 import * as windowsLauncher from '../lib/launcher-windows.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -265,6 +266,9 @@ const cubic = (p0, p1, p2, p3, t) => { const u = 1 - t; return u ** 3 * p0 + 3 *
 const sampleY = (a, b, n = 200) => Array.from({ length: n + 1 }, (_, i) => cubic(a.y, a.ry, b.ly, b.y, i / n));
 
 const isRed = ([r, g, b]) => r > 200 && g < 80 && b < 80;
+const isCyan = ([r, g, b]) => r < 80 && g > 120 && b > 180;
+const isMagenta = ([r, g, b]) => r > 180 && g < 80 && b > 90;
+const isBlack = ([r, g, b]) => r < 70 && g < 70 && b < 70;
 const isBlue = ([r, g, b]) => b > 100 && r < 90 && g < 90 && b > r * 2; // CMYK 100/100/0/0 converts to about RGB 43,36,131
 
 
@@ -1631,6 +1635,50 @@ async function main() {
       testDoc = flyer;
     });
   }
+
+  await test('PDF artboards: pdfPage / crop in the three placing tools, artboard positioning with the bleed outside', async () => {
+    // page 2: artboard 148 x 105 mm, bleed top 3, left 4, bottom 6, right 5 (cyan bleed, magenta artboard, black top band)
+    const pdf = writeBleedPdf(path.join(TMP, 'artboards.pdf'), [
+      { width: 100, height: 70, bleed: { top: 3, left: 3, bottom: 3, right: 5 } },
+      { width: 148, height: 105, bleed: { top: 3, left: 4, bottom: 6, right: 5 } },
+    ]);
+    const name = await newDoc({ preset: 'A5', bleed: 8 });
+    testDoc = name;
+    // the artboard's size with each tool
+    const placed = [];
+    let out = await call('place_graphic', { filePath: pdf, x: 0, y: 0, pdfPage: 2, crop: 'trim' });
+    placed.push(idOf(out));
+    assert(/w=148 h=105/.test(out) && /pdfPage=2 crop=trim/.test(out), `place_graphic: ${out}`);
+    out = await call('place_image', { imagePath: pdf, x: 0, y: 0, pdfPage: 2, crop: 'trim' });
+    placed.push(idOf(out));
+    assert(/w=148 h=105/.test(out) && /pdfPage=2 crop=trim/.test(out), `place_image: ${out}`);
+    out = await call('create_rectangle', { x: 0, y: 0, width: 74, height: 52.5 });
+    const shape = idOf(out);
+    out = await call('place_image_in_shape', { shapeId: shape, imagePath: pdf, pdfPage: 2, crop: 'bleed' });
+    assert(/pdfPage=2 crop=bleed/.test(out) && /bleed added \(mm\): top 1\.5, left 2, bottom 3, right 2\.5/.test(out), `place_image_in_shape: ${out}`);
+    {   // the artboard (not the bleed) fills the shape: the corners show artboard colours, never the cyan bleed
+      const c = await callRaw('render_preview', { objectId: shape, resolution: 144 });
+      const png = readPng(Buffer.from(c.find((q) => q.type === 'image').data, 'base64'));
+      for (const [x, y] of [[2, 2], [png.w - 3, 2], [2, png.h - 3], [png.w - 3, png.h - 3]]) assert(!isCyan(png.px(x, y)), `in a shape the bleed is outside, corner (${x},${y}) is ${png.px(x, y)}`);
+      assert(isBlack(png.px(png.w >> 1, 2)) && isMagenta(png.px(png.w >> 1, png.h - 3)), 'top band at the top edge, artboard at the bottom edge');
+    }
+    for (const id of [...placed, shape]) await call('delete_object', { id, confirmDestructive: true });
+    // A5 page, artboard at the page corner, 148 mm wide: the bleed hangs past the page edges
+    out = await call('place_graphic', { filePath: pdf, x: 0, y: 0, width: 148, pdfPage: 2, crop: 'bleed' });
+    assert(/x=-4 y=-3 w=157 h=114/.test(out) && /bleed added \(mm\): top 3, left 4, bottom 6, right 5/.test(out), `frame = artboard + bleed: ${out}`);
+    const c = await callRaw('render_preview', { pageIndex: 0, resolution: 254, includeBleed: true });   // 10 px per mm, origin at -8 mm
+    const png = readPng(Buffer.from(c.find((q) => q.type === 'image').data, 'base64'));
+    const at = (xmm, ymm) => png.px(Math.round((xmm + 8) * 10), Math.round((ymm + 8) * 10));
+    assert(isMagenta(at(0.5, 50)) && isCyan(at(-0.5, 50)), `left edge on the page edge: ${at(0.5, 50)} / ${at(-0.5, 50)}`);
+    assert(isMagenta(at(147.5, 50)) && isCyan(at(148.5, 50)), `right edge on the page edge: ${at(147.5, 50)} / ${at(148.5, 50)}`);
+    assert(isBlack(at(74, 0.5)) && isCyan(at(74, -0.5)), `top edge on the page edge: ${at(74, 0.5)} / ${at(74, -0.5)}`);
+    assert(isMagenta(at(74, 104.5)) && isCyan(at(74, 105.5)), `bottom edge: ${at(74, 104.5)} / ${at(74, 105.5)}`);
+    assert(isCyan(at(-3.5, 50)) && !isCyan(at(-4.5, 50)), `left bleed is 4 mm: ${at(-3.5, 50)} / ${at(-4.5, 50)}`);
+    assert(isCyan(at(152.5, 50)) && !isCyan(at(153.5, 50)), `right bleed is 5 mm: ${at(152.5, 50)} / ${at(153.5, 50)}`);
+    await fails('place_image', { imagePath: pdf, crop: 'trim', position: 'artboard' }, /crop: "bleed"/);
+    await fails('place_graphic', { filePath: pdf, pdfPage: 3 }, /no page 3/);
+    await closeDoc(name);
+  });
 
   await test('create_graphic_from_svg: linked temp file, embed, saveTo, and rejected markup', async () => {
     const name = await newDoc({ preset: 'A5' });

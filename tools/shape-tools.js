@@ -4,13 +4,15 @@
 // (`modifies`) and its handler in this one file. Handlers reach the tool context (run, respond,
 // jsStr, jsNum, frameExpr…, lib/tool-context.js) through `this`.
 
+import { PDF_PROPS, pdfPlacement, pdfPlaceScript, artboardScale, artboardBounds } from '../lib/pdf-place.js';
+
 export function createShapeTools(ctx) {
   const definitions = [
     {
       name: 'place_image',
       modifies: true,
       paths: ['imagePath'],
-      description: 'Place an image into a new frame (mm). Give width and height for a fixed frame, only width or height to keep the aspect ratio, or neither to use the image size. Returns the frame id.',
+      description: 'Place an image into a new frame (mm). Give width and height for a fixed frame, only width or height to keep the aspect ratio, or neither to use the image size. PDF / AI: pdfPage, crop and position as in place_graphic. Returns the frame id.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -25,6 +27,7 @@ export function createShapeTools(ctx) {
           contentOffsetY: { type: 'number', description: 'Move the image inside the frame by this many mm (after fitting)' },
           contentScale: { type: 'number', description: 'Scale the image content to this percentage (after fitting)' },
           createFrame: { type: 'boolean', description: 'Create a frame first (false = place at x,y with its own size)', default: true },
+          ...PDF_PROPS,
         },
         required: ['imagePath'],
       },
@@ -96,6 +99,11 @@ export function createShapeTools(ctx) {
       const pageIdx = this.jsNum(pageIndex, 'pageIndex');
       const w = width !== undefined ? this.jsNum(width, 'width') : null;
       const h = height !== undefined ? this.jsNum(height, 'height') : null;
+      const pdf = pdfPlacement(args, validatedPath);
+      // crop bleed, position artboard: the frame is the artboard grown by the bleed of each side
+      const onArtboard = pdf && pdf.position === 'artboard';
+      if (onArtboard) pdf.scaleX = pdf.scaleY = artboardScale(pdf, { width: w, height: h });
+      const pp = pdfPlaceScript(pdf);
 
       const script = `
         var doc = __requireDoc();
@@ -104,12 +112,21 @@ export function createShapeTools(ctx) {
         if (!imageFile.exists) throw new Error("Image file not found: " + imageFile.fsName);
       
         var rect;
-        ${createFrame ? `
+        ${pp.before}
+        try {
+        ${onArtboard ? `
+          rect = page.rectangles.add();
+          rect.geometricBounds = ${this.jsJson(artboardBounds(pdf, nx, ny, pdf.scaleX))};
+          try { rect.place(imageFile); ${pp.check('rect.graphics[0]')} } catch (pe) { rect.remove(); throw pe; }
+          // the graphic (artboard + bleed) has the frame's proportions: fitting does not distort
+          rect.fit(FitOptions.CONTENT_TO_FRAME);
+        ` : createFrame ? `
           rect = page.rectangles.add();
           var fw = ${w !== null ? w : (h !== null ? h : 50)}, fh = ${h !== null ? h : (w !== null ? w : 50)};
           rect.geometricBounds = [${ny}, ${nx}, ${ny} + fh, ${nx} + fw];
           try {
             rect.place(imageFile);
+            ${pp.check('rect.graphics[0]')}
           } catch (pe) {
             rect.remove();
             throw pe;
@@ -134,7 +151,11 @@ export function createShapeTools(ctx) {
         ` : `
           var placed = page.place(imageFile, [${nx}, ${ny}]);
           rect = placed[0].parent;
+          ${pp.check('rect.graphics[0]')}
         `}
+        } finally {
+          ${pp.restore}
+        }
       
         ${contentScale !== undefined ? `
           rect.graphics[0].horizontalScale = ${this.jsNum(contentScale, 'contentScale')};
@@ -144,7 +165,7 @@ export function createShapeTools(ctx) {
           rect.graphics[0].move(undefined, [${contentOffsetX !== undefined ? this.jsNum(contentOffsetX, 'contentOffsetX') : 0}, ${contentOffsetY !== undefined ? this.jsNum(contentOffsetY, 'contentOffsetY') : 0}]);
         ` : ''}
       
-        "Image placed: " + imageFile.name + " - " + __describe(rect);
+        "Image placed: " + imageFile.name + " - " + __describe(rect) + ${pp.info('rect.graphics[0]')};
       `;
 
       const result = await this.run(script);

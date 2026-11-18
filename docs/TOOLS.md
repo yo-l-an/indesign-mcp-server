@@ -1212,7 +1212,7 @@ Text frame options (Object > Text Frame Options): insets per side, first baselin
 
 #### `place_image`
 
-Place an image into a new frame (mm). Give width and height for a fixed frame, only width or height to keep the aspect ratio, or neither to use the image size. Returns the frame id.
+Place an image into a new frame (mm). Give width and height for a fixed frame, only width or height to keep the aspect ratio, or neither to use the image size. PDF / AI: pdfPage, crop and position as in place_graphic. Returns the frame id.
 
 | Parameter | Type | Description |
 |---|---|---|
@@ -1227,10 +1227,13 @@ Place an image into a new frame (mm). Give width and height for a fixed frame, o
 | `contentOffsetY` | number | Move the image inside the frame by this many mm (after fitting) |
 | `contentScale` | number | Scale the image content to this percentage (after fitting) |
 | `createFrame` | boolean | Create a frame first (false = place at x,y with its own size) Default: `true`. |
+| `pdfPage` | number | PDF / AI: page (Illustrator: artboard) to place, 1-based Default: `1`. |
+| `crop` | `pdf` \| `art` \| `trim` \| `bleed` \| `media` \| `content_visible` \| `content_all` | PDF / AI: what to place: pdf (crop box; for an .ai the artboard), trim (the artboard), bleed (artboard + bleed, from a PDF exported with bleed; an .ai has none), art, media, content_visible, content_all Default: `"pdf"`. |
+| `position` | `artboard` \| `bleed` | With crop "bleed": artboard (default) = x, y, width, height describe the artboard and the bleed hangs outside (onto the document bleed for a full-page visual; in a shape: the artboard is fitted, the bleed is cut by the shape); bleed = they describe the whole graphic including the bleed |
 
 #### `place_image_in_shape`
 
-Place an image into an existing shape (path, rectangle, oval, polygon) which acts as the mask. fitOption FILL_PROPORTIONALLY (crop to fill, default), PROPORTIONALLY, CONTENT_TO_FRAME, CENTER_CONTENT or NONE; then optional contentOffsetX/Y (mm) and contentScale (%). Returns the shape id.
+Place an image into an existing shape (path, rectangle, oval, polygon) which acts as the mask. fitOption FILL_PROPORTIONALLY (crop to fill, default), PROPORTIONALLY, CONTENT_TO_FRAME, CENTER_CONTENT or NONE; then optional contentOffsetX/Y (mm) and contentScale (%). PDF / AI: pdfPage, crop and position as in place_graphic; with crop bleed the fit applies to the artboard and the bleed hangs outside the shape. Returns the shape id.
 
 | Parameter | Type | Description |
 |---|---|---|
@@ -1240,10 +1243,13 @@ Place an image into an existing shape (path, rectangle, oval, polygon) which act
 | `contentOffsetX` | number | Move the image inside the shape (mm) |
 | `contentOffsetY` | number | Move the image inside the shape (mm) |
 | `contentScale` | number | Scale of the image content in percent |
+| `pdfPage` | number | PDF / AI: page (Illustrator: artboard) to place, 1-based Default: `1`. |
+| `crop` | `pdf` \| `art` \| `trim` \| `bleed` \| `media` \| `content_visible` \| `content_all` | PDF / AI: what to place: pdf (crop box; for an .ai the artboard), trim (the artboard), bleed (artboard + bleed, from a PDF exported with bleed; an .ai has none), art, media, content_visible, content_all Default: `"pdf"`. |
+| `position` | `artboard` \| `bleed` | With crop "bleed": artboard (default) = x, y, width, height describe the artboard and the bleed hangs outside (onto the document bleed for a full-page visual; in a shape: the artboard is fitted, the bleed is cut by the shape); bleed = they describe the whole graphic including the bleed |
 
 #### `place_graphic`
 
-Place a vector graphic (.svg, .ai, .eps, .pdf) into a new frame (mm). Give width and height for a fixed frame, only one for the aspect ratio, or neither for the natural size (SVG: taken from the root width/height, unitless and px as 1 px = 1 pt). PDF/AI: pdfPage (default 1) and crop (pdf, art, trim, bleed, media, content_visible, content_all). Returns the frame id and whether the result is linked; embed: true unlinks and embeds it.
+Place a vector graphic (.svg, .ai, .eps, .pdf) into a new frame (mm). Give width and height for a fixed frame, only one for the aspect ratio, or neither for the natural size (SVG: taken from the root width/height, unitless and px as 1 px = 1 pt). PDF/AI: pdfPage (default 1, the artboard of an .ai), crop (default pdf; trim = the artboard, bleed = artboard + bleed) and, with crop bleed, position artboard (default: x/y/width/height are the artboard, the bleed hangs outside). Returns the frame id and whether the result is linked; embed: true unlinks and embeds it.
 
 | Parameter | Type | Description |
 |---|---|---|
@@ -1255,8 +1261,9 @@ Place a vector graphic (.svg, .ai, .eps, .pdf) into a new frame (mm). Give width
 | `pageIndex` | number | Page index (0-based) Default: `0`. |
 | `fitOption` | `PROPORTIONALLY` \| `FILL_PROPORTIONALLY` \| `CONTENT_TO_FRAME` \| `FRAME_TO_CONTENT` \| `CENTER_CONTENT` \| `NONE` | How the graphic fits the frame, with both width and height (otherwise the frame takes the aspect ratio of the graphic and the option is ignored): PROPORTIONALLY = whole graphic inside the frame, empty bands when the ratios differ (logos, charts, nothing may be cut); FILL_PROPORTIONALLY = covers the frame, edges cropped (photos, backgrounds, grid cells); CONTENT_TO_FRAME = stretched to the frame (distorts); FRAME_TO_CONTENT = frame resized to the graphic at 100% (width/height discarded); CENTER_CONTENT = 100%, centred; NONE = 100%, top-left Default: `"PROPORTIONALLY"`. |
 | `embed` | boolean | Unlink and embed the graphic in the document Default: `false`. |
-| `pdfPage` | number | PDF / AI: page number to place (1-based) Default: `1`. |
-| `crop` | `pdf` \| `art` \| `trim` \| `bleed` \| `media` \| `content_visible` \| `content_all` | PDF / AI: crop to Default: `"pdf"`. |
+| `pdfPage` | number | PDF / AI: page (Illustrator: artboard) to place, 1-based Default: `1`. |
+| `crop` | `pdf` \| `art` \| `trim` \| `bleed` \| `media` \| `content_visible` \| `content_all` | PDF / AI: what to place: pdf (crop box; for an .ai the artboard), trim (the artboard), bleed (artboard + bleed, from a PDF exported with bleed; an .ai has none), art, media, content_visible, content_all Default: `"pdf"`. |
+| `position` | `artboard` \| `bleed` | With crop "bleed": artboard (default) = x, y, width, height describe the artboard and the bleed hangs outside (onto the document bleed for a full-page visual; in a shape: the artboard is fitted, the bleed is cut by the shape); bleed = they describe the whole graphic including the bleed |
 
 #### `create_graphic_from_svg`
 

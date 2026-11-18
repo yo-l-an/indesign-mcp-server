@@ -8,6 +8,7 @@
 import { jsStr, jsJson, jsNum, jsEnum } from '../lib/script-runtime.js';
 import { svgPathToSubpaths, fitSubpaths, polygonPoints } from '../lib/svg-path.js';
 import { has } from '../lib/tool-context.js';
+import { PDF_PROPS, pdfPlacement, pdfPlaceScript } from '../lib/pdf-place.js';
 
 
 const OBJECT_PROPS = {
@@ -324,7 +325,7 @@ export function createVectorTools(ctx) {
       name: 'place_image_in_shape',
       modifies: true,
       paths: ['imagePath'],
-      description: 'Place an image into an existing shape (path, rectangle, oval, polygon) which acts as the mask. fitOption FILL_PROPORTIONALLY (crop to fill, default), PROPORTIONALLY, CONTENT_TO_FRAME, CENTER_CONTENT or NONE; then optional contentOffsetX/Y (mm) and contentScale (%). Returns the shape id.',
+      description: 'Place an image into an existing shape (path, rectangle, oval, polygon) which acts as the mask. fitOption FILL_PROPORTIONALLY (crop to fill, default), PROPORTIONALLY, CONTENT_TO_FRAME, CENTER_CONTENT or NONE; then optional contentOffsetX/Y (mm) and contentScale (%). PDF / AI: pdfPage, crop and position as in place_graphic; with crop bleed the fit applies to the artboard and the bleed hangs outside the shape. Returns the shape id.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -334,6 +335,7 @@ export function createVectorTools(ctx) {
           contentOffsetX: { type: 'number', description: 'Move the image inside the shape (mm)' },
           contentOffsetY: { type: 'number', description: 'Move the image inside the shape (mm)' },
           contentScale: { type: 'number', description: 'Scale of the image content in percent' },
+          ...PDF_PROPS,
         },
         required: ['shapeId', 'imagePath'],
       },
@@ -835,6 +837,21 @@ export function createVectorTools(ctx) {
     const fit = has(args.fitOption) ? args.fitOption : 'FILL_PROPORTIONALLY';
     const fits = { FILL_PROPORTIONALLY: 'FitOptions.FILL_PROPORTIONALLY', PROPORTIONALLY: 'FitOptions.PROPORTIONALLY', CONTENT_TO_FRAME: 'FitOptions.CONTENT_TO_FRAME', CENTER_CONTENT: 'FitOptions.CENTER_CONTENT', NONE: null };
     if (!(fit in fits)) throw new Error(`Invalid fitOption: ${fit}`);
+    const pdf = pdfPlacement(args, validated);
+    const pp = pdfPlaceScript(pdf);
+    // crop bleed, position artboard: the artboard (not the graphic with its bleed) is fitted to the shape
+    let fitStep = fits[fit] ? `shape.fit(${fits[fit]});` : '';
+    let info = pp.info('shape.graphics[0]');
+    if (pdf && pdf.position === 'artboard') {
+      const { width: aw, height: ah, bleed: b } = pdf.boxes;
+      const mode = { FILL_PROPORTIONALLY: 'Math.max(W / aw, H / ah)', PROPORTIONALLY: 'Math.min(W / aw, H / ah)', CENTER_CONTENT: '1', NONE: '1' }[fit];
+      fitStep = `
+        var sb = shape.geometricBounds, W = sb[3] - sb[1], H = sb[2] - sb[0], aw = ${aw}, ah = ${ah};
+        var __sx = ${mode ? mode : 'W / aw'}, __sy = ${mode ? '__sx' : 'H / ah'};
+        var ax = sb[1] + ${fit === 'NONE' ? '0' : '(W - aw * __sx) / 2'}, ay = sb[0] + ${fit === 'NONE' ? '0' : '(H - ah * __sy) / 2'};
+        shape.graphics[0].geometricBounds = [ay - ${b.top} * __sy, ax - ${b.left} * __sx, ay + (ah + ${b.bottom}) * __sy, ax + (aw + ${b.right}) * __sx];`;
+      info = pp.info('shape.graphics[0]', '__sx', '__sy');
+    }
     const script = `
       var doc = __requireDoc();
       var shape = __resolve(doc, ${jsNum(args.shapeId, 'shapeId')}, null, null);
@@ -842,11 +859,20 @@ export function createVectorTools(ctx) {
       if (!file.exists) throw new Error("Image file not found: " + file.fsName);
       var kind = shape.constructor.name;
       if (kind !== "Rectangle" && kind !== "Oval" && kind !== "Polygon") throw new Error("Object " + shape.id + " is a " + kind + " and cannot be used as a mask (use a rectangle, oval or polygon/path)");
-      shape.place(file);
-      ${fits[fit] ? `shape.fit(${fits[fit]});` : ''}
+      ${pp.before}
+      try {
+        shape.place(file);
+        ${pp.check('shape.graphics[0]')}
+      } catch (pe) {
+        try { if (shape.graphics.length) shape.graphics[0].remove(); } catch (eRm) {}
+        throw pe;
+      } finally {
+        ${pp.restore}
+      }
+      ${fitStep}
       ${has(args.contentScale) ? `shape.graphics[0].horizontalScale = ${jsNum(args.contentScale, 'contentScale')}; shape.graphics[0].verticalScale = ${jsNum(args.contentScale, 'contentScale')};` : ''}
       ${has(args.contentOffsetX) || has(args.contentOffsetY) ? `shape.graphics[0].move(undefined, [${has(args.contentOffsetX) ? jsNum(args.contentOffsetX, 'contentOffsetX') : 0}, ${has(args.contentOffsetY) ? jsNum(args.contentOffsetY, 'contentOffsetY') : 0}]);` : ''}
-      "Image placed in shape: " + __describePath(shape);
+      "Image placed in shape: " + __describePath(shape) + ${info};
     `;
     return respond(await run(script), 'Place Image In Shape');
   };

@@ -28,7 +28,7 @@ A document built from scratch starts with its technical frame, settled with the 
    - layers: `create_layer` for each, `move_layer` into order (backgrounds lowest), `set_layer` for colours or non-printing notes;
    - folios on master A (Page numbers), and `set_section` when numbering starts elsewhere;
    - paragraph, character and object styles with the chosen fonts, body leading equal to the baseline grid.
-3. **Lay out the pages**: frames with `paragraphStyle`, cut to their text (Text frames) and placed on the columns (Aligning on the grid); objects on their layer (`move_to_layer`); a layout that repeats (chapter openers, a footer, a background) moves to a master as soon as it repeats (Masters); each block, illustration and aligned text set grouped as it is finished (Groups and names). Logos: native paths (`create_path_from_svg`) first, `place_graphic` for .svg/.pdf/.ai/.eps, `create_graphic_from_svg` as the fallback.
+3. **Lay out the pages**: frames with `paragraphStyle`, cut to their text (Text frames) and placed on the columns (Aligning on the grid); objects on their layer (`move_to_layer`); a layout that repeats (chapter openers, a footer, a background) moves to a master as soon as it repeats (Masters); each block, illustration and aligned text set grouped as it is finished (Groups and names). Logos: native paths (`create_path_from_svg`) first, `place_graphic` for .svg/.pdf/.ai/.eps (artboard and bleed: Placing PDF and Illustrator artwork), `create_graphic_from_svg` as the fallback.
 4. **Check**: `get_layout_setup` matches the answers; `view_page_map` shows the spreads and masters; `render_preview` / `measure_text` for the pages; `export_pdf`.
 
 **Done when** every kickstart answer shows in `get_layout_setup`, every page carries its folio from a master, and the user has the file path. The full tool reference is `docs/TOOLS.md` in the server folder.
@@ -98,6 +98,18 @@ Objects sit on the page's structure: margins, columns, rows, guides, baseline gr
 - `align_objects` aligns objects to each other, the page or the margins.
 
 **Done when** every object you placed lands on lines `get_page_grid` lists (the tool results name them).
+
+## Placing PDF and Illustrator artwork
+
+`place_graphic`, `place_image` and `place_image_in_shape` take the same three options for a .pdf or .ai file:
+
+- `pdfPage`: the page, or the Illustrator artboard, 1-based (default 1).
+- `crop`: `trim` places the artboard; `bleed` places the artboard with its bleed; `pdf` (default) is the crop box, which for an .ai is the artboard and for a PDF exported with bleed usually includes the bleed.
+- `position` (with `crop: "bleed"`): `artboard` (default) = `x`, `y`, `width`, `height` describe the artboard, and the bleed hangs outside it; `bleed` = they describe the whole graphic.
+
+A full-page visual with bleed: `place_graphic({ filePath, crop: "bleed", x: 0, y: 0, width: <page width> })` puts the artboard exactly on the page and its bleed onto the document bleed. In a shape, the fit applies to the artboard and the shape cuts the bleed.
+
+An .ai carries no bleed (Illustrator stops its PDF part at the artboard): for a visual that bleeds, place a PDF exported from Illustrator with bleed. The result line prints `pdfPage=… crop=…` and, for `position: "artboard"`, the bleed added per side in mm; check it before moving on.
 
 ## Groups and names
 

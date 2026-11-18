@@ -3,6 +3,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { PDF_PROPS, pdfPlacement, pdfPlaceScript, artboardScale, artboardBounds } from '../lib/pdf-place.js';
 import { jsStr, jsJson, jsNum } from '../lib/script-runtime.js';
 import { svgPathToSubpaths, fitSubpaths, subpathBounds } from '../lib/svg-path.js';
 import { has } from '../lib/tool-context.js';
@@ -10,7 +11,6 @@ import { has } from '../lib/tool-context.js';
 const rand = () => Math.random().toString(36).slice(2);
 
 const VECTOR_EXTENSIONS = ['.svg', '.ai', '.eps', '.pdf'];
-const CROPS = { pdf: 'CROP_PDF', art: 'CROP_ART', trim: 'CROP_TRIM', bleed: 'CROP_BLEED', media: 'CROP_MEDIA', content_visible: 'CROP_CONTENT_VISIBLE_LAYERS', content_all: 'CROP_CONTENT_ALL_LAYERS' };
 const FITS = { PROPORTIONALLY: 'FitOptions.PROPORTIONALLY', FILL_PROPORTIONALLY: 'FitOptions.FILL_PROPORTIONALLY', CONTENT_TO_FRAME: 'FitOptions.CONTENT_TO_FRAME', FRAME_TO_CONTENT: 'FitOptions.FRAME_TO_CONTENT', CENTER_CONTENT: 'FitOptions.CENTER_CONTENT', NONE: null };
 
 // Size of an SVG in mm from the width/height of its root element, or null when they are missing
@@ -149,14 +149,13 @@ export function createGraphicsTools(ctx) {
       name: 'place_graphic',
       modifies: true,
       paths: ['filePath'],
-      description: 'Place a vector graphic (.svg, .ai, .eps, .pdf) into a new frame (mm). Give width and height for a fixed frame, only one for the aspect ratio, or neither for the natural size (SVG: taken from the root width/height, unitless and px as 1 px = 1 pt). PDF/AI: pdfPage (default 1) and crop (pdf, art, trim, bleed, media, content_visible, content_all). Returns the frame id and whether the result is linked; embed: true unlinks and embeds it.',
+      description: 'Place a vector graphic (.svg, .ai, .eps, .pdf) into a new frame (mm). Give width and height for a fixed frame, only one for the aspect ratio, or neither for the natural size (SVG: taken from the root width/height, unitless and px as 1 px = 1 pt). PDF/AI: pdfPage (default 1, the artboard of an .ai), crop (default pdf; trim = the artboard, bleed = artboard + bleed) and, with crop bleed, position artboard (default: x/y/width/height are the artboard, the bleed hangs outside). Returns the frame id and whether the result is linked; embed: true unlinks and embeds it.',
       inputSchema: {
         type: 'object',
         properties: {
           filePath: { type: 'string', description: 'Path of the .svg, .ai, .eps or .pdf file' },
           ...PLACE_PROPS,
-          pdfPage: { type: 'number', description: 'PDF / AI: page number to place (1-based)', default: 1 },
-          crop: { type: 'string', enum: Object.keys(CROPS), description: 'PDF / AI: crop to', default: 'pdf' },
+          ...PDF_PROPS,
         },
         required: ['filePath'],
       },
@@ -370,10 +369,7 @@ export function createGraphicsTools(ctx) {
     if (!VECTOR_EXTENSIONS.includes(ext)) throw new Error(`Unsupported file type ${ext || '(none)'}: place_graphic handles ${VECTOR_EXTENSIONS.join(', ')} (use place_image for bitmaps)`);
     const fit = has(args.fitOption) ? args.fitOption : 'PROPORTIONALLY';
     if (!(fit in FITS)) throw new Error(`Invalid fitOption: ${fit}`);
-    const crop = has(args.crop) ? args.crop : 'pdf';
-    if (!CROPS[crop]) throw new Error(`Invalid crop: ${crop}`);
-    const pdfPage = has(args.pdfPage) ? Math.floor(jsNum(args.pdfPage, 'pdfPage')) : 1;
-    if (pdfPage < 1) throw new Error('pdfPage must be >= 1');
+    const pdf = pdfPlacement(args, file);
     const nx = has(args.x) ? jsNum(args.x, 'x') : 10, ny = has(args.y) ? jsNum(args.y, 'y') : 10;
     let w = has(args.width) ? jsNum(args.width, 'width') : null, h = has(args.height) ? jsNum(args.height, 'height') : null;
     let fitName = fit;
@@ -383,8 +379,11 @@ export function createGraphicsTools(ctx) {
       const natural = svgNaturalSizeMm(file);
       if (natural) { w = natural.w; h = natural.h; fitName = 'CONTENT_TO_FRAME'; }
     }
-    const usesPdfPrefs = ext === '.pdf' || ext === '.ai';
     const embed = args.embed === true;
+    // crop bleed, position artboard: the frame is the artboard grown by the bleed of each side
+    const onArtboard = pdf && pdf.position === 'artboard';
+    if (onArtboard) pdf.scaleX = pdf.scaleY = artboardScale(pdf, { width: w, height: h });
+    const pp = pdfPlaceScript(pdf);
 
     const script = `
       var doc = __requireDoc();
@@ -392,22 +391,17 @@ export function createGraphicsTools(ctx) {
       var file = File(${jsStr(file)});
       if (!file.exists) throw new Error("File not found: " + file.fsName);
       var rect = page.rectangles.add();
-      var pp = app.pdfPlacePreferences, oldPage = null, oldCrop = null;
+      ${pp.before}
       try {
-        ${usesPdfPrefs ? `
-          oldPage = pp.pageNumber; oldCrop = pp.pdfCrop;
-          pp.pageNumber = ${pdfPage};
-          pp.pdfCrop = PDFCrop.${CROPS[crop]};
-        ` : ''}
+        ${onArtboard ? `rect.geometricBounds = ${jsJson(artboardBounds(pdf, nx, ny, pdf.scaleX))};` : `
         var fw = ${w !== null ? w : (h !== null ? h : 50)}, fh = ${h !== null ? h : (w !== null ? w : 50)};
-        rect.geometricBounds = [${ny}, ${nx}, ${ny} + fh, ${nx} + fw];
+        rect.geometricBounds = [${ny}, ${nx}, ${ny} + fh, ${nx} + fw];`}
         rect.place(file);
-        ${usesPdfPrefs ? `
-          // InDesign silently falls back to page 1 when the file has fewer pages
-          var placedPage = rect.graphics[0].pdfAttributes.pageNumber;
-          if (placedPage !== ${pdfPage}) throw new Error("The file has no page ${pdfPage}: InDesign placed page " + placedPage + " instead (the file has fewer pages)");
-        ` : ''}
-        ${(w !== null) !== (h !== null) || (w === null && h === null) ? `
+        ${pp.check('rect.graphics[0]')}
+        ${onArtboard ? `
+          // the graphic (artboard + bleed) has the frame's proportions: fitting does not distort
+          rect.fit(FitOptions.CONTENT_TO_FRAME);
+        ` : (w !== null) !== (h !== null) || (w === null && h === null) ? `
           rect.fit(FitOptions.FRAME_TO_CONTENT);
           var nb = rect.geometricBounds, iw = nb[3] - nb[1], ih = nb[2] - nb[0];
           ${w !== null ? `rect.geometricBounds = [${ny}, ${nx}, ${ny} + ${w} * ih / iw, ${nx} + ${w}]; rect.fit(FitOptions.CONTENT_TO_FRAME);`
@@ -421,7 +415,7 @@ export function createGraphicsTools(ctx) {
         try { rect.remove(); } catch (e2) {}
         throw e;
       } finally {
-        ${usesPdfPrefs ? 'try { pp.pageNumber = oldPage; pp.pdfCrop = oldCrop; } catch (e3) {}' : ''}
+        ${pp.restore}
       }
       var g = rect.graphics[0];
       var linked = false, status = "embedded";
@@ -430,8 +424,7 @@ export function createGraphicsTools(ctx) {
         // an embedded graphic keeps a link object whose status is LINK_EMBEDDED
         if (lk && lk.isValid && String(lk.status) !== "LINK_EMBEDDED") { linked = true; status = String(lk.status); }
       } catch (e4) {}
-      var pdfInfo = "";
-      ${usesPdfPrefs ? 'try { pdfInfo = " pdfPage=" + g.pdfAttributes.pageNumber; } catch (e5) {}' : ''}
+      var pdfInfo = ${pp.info('g')};
       "Graphic placed: " + __describe(rect) + " type=" + g.imageTypeName + " linked=" + linked + " (" + status + ")" + pdfInfo;
     `;
     return run(script);
