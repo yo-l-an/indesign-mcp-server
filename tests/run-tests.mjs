@@ -2380,6 +2380,35 @@ async function main() {
     testDoc = previous;
   });
 
+  await test('review: grouping shows as a group added with its members; page moves keep real BEFORE thumbnails and content changes', async () => {
+    const previous = testDoc;
+    const name = await layoutDoc({ filePath: path.join(TMP, 'review-groups.indd') });
+    testDoc = name;
+    await call('create_color_swatch', { name: 'RevBlue', colorValues: [100, 100, 0, 0] });
+    const ids = [];
+    for (const x of [20, 60, 100]) ids.push(idOf(await call('create_rectangle', { x, y: 20, width: 30, height: 30, fillColor: 'RevBlue' })));
+    await call('save_document', {});
+    await call('prepare_edit', { pages: ['1'], reason: 'group review', backup: false, listObjects: false });
+    const g = idOf(await call('group_objects', { ids, name: 'Info box' }));
+    let review = await call('review_compare', { language: 'en', maxImages: 0 });
+    assert(new RegExp(`Group #${g} «Info box»[^\\n]*3 object\\(s\\)[^\\n]*Added`).test(review), `the group is added with its members: ${review.slice(0, 1500)}`);
+    assert(new RegExp(`Group[^\\n]*—[^\\n]*#${g}`).test(review), `the members' group change: ${review.slice(0, 1500)}`);
+    // page order: every page kept at 36 dpi; an object deleted on the moved page is reported
+    for (const p of [1, 2, 3]) await call('create_rectangle', { x: 20, y: 100, width: 50, height: 50, fillColor: 'RevBlue', pageIndex: p });
+    const onLast = idOf(await call('create_text_frame', { content: 'Dernière page', x: 20, y: 200, width: 80, height: 10, pageIndex: 3 }));
+    await call('save_document', {});
+    let out = await call('prepare_edit', { pages: [], reason: 'page order', backup: false });
+    assert(/page order: every page kept at 36 dpi \(4 pages\)/.test(out), out);
+    await call('move_page', { page: '4', position: 'start' });
+    await call('delete_object', { id: onLast, confirmDestructive: true });
+    const c = await callRaw('review_compare', { language: 'en', maxImages: 3 });
+    review = c.filter((q) => q.type === 'text').map((q) => q.text).join('\n');
+    assert(/moved/i.test(review) && new RegExp(`#${onLast}[^\\n]*Removed`).test(review), `the move and the deleted frame: ${review.slice(0, 1500)}`);
+    assert(/review-pages\.png/.test(review), `the page map is drawn: ${review.slice(0, 600)}`);
+    await closeDoc(name);
+    testDoc = previous;
+  });
+
   console.log('\nErrors');
   await test('errors are readable: no osascript paths, numeric codes for InDesign errors', async () => {
     const msg = await fails('create_text_frame', { content: 'x', paragraphStyle: 'Nope' });

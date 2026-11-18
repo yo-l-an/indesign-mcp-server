@@ -90,7 +90,7 @@ function __uniq(list) { var seen = {}, out = []; for (var i = 0; i < list.length
 export function inventoryScript(pageIds, knownIds = null, after = '') {
   return `
     ${JSON_ES}
-    var SKIP = { Image: 1, EPS: 1, PDF: 1, PICT: 1, WMF: 1, ImportedPage: 1, SVG: 1, Graphic: 1, Group: 1 };
+    var SKIP = { Image: 1, EPS: 1, PDF: 1, PICT: 1, WMF: 1, ImportedPage: 1, SVG: 1, Graphic: 1 };
     function __item(it) {
       var o = { id: it.id, type: it.constructor.name };
       try { var b = it.visibleBounds; o.bounds = [__r1(b[0]), __r1(b[1]), __r1(b[2]), __r1(b[3])]; } catch (e) {}
@@ -116,6 +116,9 @@ export function inventoryScript(pageIds, knownIds = null, after = '') {
       try { o.layer = it.itemLayer.name; } catch (e) {}
       try { o.name = it.name || it.label || ""; } catch (e) { try { o.name = it.label || ""; } catch (e2) {} }
       try { o.objectStyle = it.appliedObjectStyle.name; } catch (e) {}
+      // groups: their member count; every object: the group it is in (grouping shows in the review)
+      if (o.type === "Group") { try { o.members = it.pageItems.length; } catch (e) {} }
+      try { if (it.parent instanceof Group) o.group = it.parent.id; } catch (e) {}
       if (o.type === "TextFrame") {
         try {
           var story = it.parentStory;
@@ -749,14 +752,18 @@ export function createReviewTools(ctx) {
   };
 
   handlers.prepare_edit = async (args) => {
-    const resolution = has(args.resolution) ? jsNum(args.resolution, 'resolution') : 96;
+    let resolution = has(args.resolution) ? jsNum(args.resolution, 'resolution') : 96;
     if (resolution < 36 || resolution > 150) throw new Error('resolution must be 36-150 dpi');
     // Two round trips: the document and its pages, then backup + inventory + page renders +
     // showing the first page in one script
     let context = null;
     const getContext = async () => (context ||= await readContext());
-    const pageIds = await targetPageIds(args, { required: true, getPages: async () => (await getContext()).pages });
+    let pageIds = await targetPageIds(args, { required: true, getPages: async () => (await getContext()).pages });
     const { doc, pages } = await getContext();
+    // Page order only (pages: []): every page is kept small (objects and a 36 dpi render), so the
+    // page map shows the real BEFORE and content that changes with a move is reported
+    const orderOnly = Array.isArray(pageIds) && !pageIds.length;
+    if (orderOnly && pages.length <= MAX_PAGES) { pageIds = null; resolution = 36; }
     const scope = pageIds ? pageIds.length : pages.length;
     if (scope > MAX_PAGES) throw new Error(`${scope} pages: name the pages (at most ${MAX_PAGES})`);
     const { id, inv, target } = await takeSnapshot({ doc, pageIds, reason: args.reason, backup: args.backup !== false, resolution, showFirstPage: true });
@@ -766,8 +773,8 @@ export function createReviewTools(ctx) {
     } else {
       lines.push('Backup: skipped (backup: false)');
     }
-    lines.push(`Snapshot: snapshotId=${id} – ${inv.pages.length ? pageRange(inv.pages) : 'page order only'}`);
-    if (args.listObjects !== false && inv.pages.length && inv.pages.length <= 6) lines.push('', ...inv.pages.map((p) => pageSummary(p)));
+    lines.push(`Snapshot: snapshotId=${id} – ${orderOnly ? (inv.pages.length ? `page order: every page kept at 36 dpi (${inv.pages.length} pages)` : `page order only (more than ${MAX_PAGES} pages: no thumbnails)`) : inv.pages.length ? pageRange(inv.pages) : 'page order only'}`);
+    if (!orderOnly && args.listObjects !== false && inv.pages.length && inv.pages.length <= 6) lines.push('', ...inv.pages.map((p) => pageSummary(p)));
     else if (args.listObjects !== false && inv.pages.length) lines.push(`(${inv.pages.length} pages: object lists omitted; use list_page_items or find_text for the page you work on)`);
     lines.push('', 'Next: make the changes (use the ids), then review_compare.');
     return { content: [{ type: 'text', text: lines.join('\n') }] };

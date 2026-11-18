@@ -14,7 +14,7 @@ Follow the five steps for every correction. The reference sections answer questi
 - The PM names pages → those page names (`"12"`, `"iv"`, `"A-3"`, as shown in InDesign).
 - The PM quotes text, or asks for a global replace → `find_text({ text })` gives page, frame id and context for each match; its pages are the scope.
 - Style, swatch, master, margins, grid or document setup → every page that uses it (`get_layout_setup` lists the pages of each master); `allPages: true` when that is most of the document. These belong to the client: change them with the PM's agreement.
-- Moving, adding or removing pages → `pages: []` when no page content changes; the backup and the page order are enough.
+- Moving, adding or removing pages → `pages: []`: the snapshot keeps the page order and every page at 36 dpi (documents up to 200 pages), so the review's page map shows the real before and reports content that changed with the move.
 - Moving an object to another page → both pages.
 
 **Done when** you hold the page names of the scope, and nothing outside it has been read. With client files: the PM has answered every question of the triage.

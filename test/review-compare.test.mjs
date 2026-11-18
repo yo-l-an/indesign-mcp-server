@@ -152,14 +152,48 @@ test('objects pasted into a shape under new ids read as moved into it, not remov
   assert.deepEqual(moved.map((r) => [r.element.replace(/ «.*/, ''), r.after, r.kind]), [['Text frame #42', 'Ellipse #30', 'Moved'], ['Rectangle #43', 'Ellipse #30', 'Moved']]);
   assert.ok(out.rows.some((r) => r.kind === 'Added' && /Group #41/.test(r.element)), 'the new group is added');
   // a group re-created by move_into_group: paired with its old id, its new member placed into it
-  const grp = { id: 50, type: 'Group', name: 'Logo', bounds: [10, 10, 30, 60] };
+  const grp = { id: 50, type: 'Group', name: 'Logo', bounds: [10, 10, 30, 60], members: 3 };
   const b2 = inv([page(1, 1, [grp, { id: 12, type: 'Rectangle', bounds: [40, 10, 60, 30] }])]);
-  const a2 = inv([page(1, 1, [{ ...grp, id: 55, bounds: [10, 10, 60, 60] }, { id: 12, type: 'Rectangle', bounds: [40, 10, 60, 30] }])]);
+  const a2 = inv([page(1, 1, [{ ...grp, id: 55, bounds: [10, 10, 60, 60], members: 4 }, { id: 12, type: 'Rectangle', bounds: [40, 10, 60, 30], group: 55 }])]);
   const w2 = { lastSnapshot: 's2' };
   recordIdMoves(w2, [{ from: 50, to: 55 }, { from: 12, to: 12, into: { type: 'Group', id: 55, name: 'Logo' } }]);
   const s2 = memorySource({ 'before:1': blank(), 'after:1': blank() });
   s2.idMoves = () => w2.idMoves.get('s2');
   const o2 = await compareSnapshots({ before: b2, after: a2, source: s2, language: 'en' });
-  assert.deepEqual(o2.rows.map((r) => [r.element.replace(/ «.*/, ''), r.property, r.kind]), [['Group #55', 'Position / size', 'Modified'], ['Rectangle #12', 'Moved into', 'Moved']]);
+  assert.deepEqual(o2.rows.map((r) => [r.element.replace(/ «.*/, ''), r.property, r.kind]), [['Group #55', 'Objects', 'Modified'], ['Rectangle #12', 'Moved into', 'Moved']]);
   assert.match(o2.rows[1].after, /Group #55 «Logo»/);
+});
+
+test('grouping and ungrouping show in the table: the group added or removed, each member\'s group', async () => {
+  const members = [10, 11, 12].map((id, i) => ({ id, type: 'Rectangle', bounds: [10, 10 + i * 30, 30, 30 + i * 30] }));
+  const grouped = inv([page(1, 1, [{ id: 683, type: 'Group', name: 'Info box', bounds: [10, 10, 30, 90], members: 3 }, ...members.map((m) => ({ ...m, group: 683 }))])]);
+  const plain = inv([page(1, 1, members)]);
+  const out = await compareSnapshots({ before: plain, after: grouped, source: memorySource({ 'before:1': blank(), 'after:1': blank() }), language: 'en' });
+  const added = out.rows.find((r) => r.kind === 'Added');
+  assert.deepEqual([added.element, added.after], ['Group #683 «Info box»', '3 object(s)']);
+  assert.deepEqual(out.rows.filter((r) => r.property === 'Group').map((r) => [r.element, r.before, r.after]), [['Rectangle #10', '—', '#683'], ['Rectangle #11', '—', '#683'], ['Rectangle #12', '—', '#683']]);
+  const back = await compareSnapshots({ before: inv([page(1, 1, grouped.pages[0].items)]), after: inv([page(1, 1, members)]), source: memorySource({ 'before:1': blank(), 'after:1': blank() }), language: 'fr' });
+  assert.ok(back.rows.some((r) => r.kind === 'Supprimé' && /Groupe #683/.test(r.element) && r.before === '3 objet(s)'), 'ungrouping removes the group');
+});
+
+test('page map: BEFORE thumbnails come from the snapshot renders, not from the current pages', async () => {
+  const pages = (ids) => ids.map((id, i) => ({ id, name: String(i + 1), spread: id, side: 'single' }));
+  const before = inv([page(1, 1, []), page(2, 2, [])]);
+  before.document.allPages = pages([1, 2]);
+  const after = inv([page(2, 1, []), page(1, 2, [])], [2, 1]);
+  after.document.allPages = pages([2, 1]);
+  const colour = (rgb) => { const img = blank(); fillRect(img, 0, 0, 210, 297, rgb); return img; };
+  // the snapshot renders are blue, the pages as they are now red
+  const source = memorySource({ 'before:1': colour([0, 0, 255]), 'before:2': colour([0, 0, 255]), 'after:1': colour([0, 0, 255]), 'after:2': colour([0, 0, 255]) });
+  source.thumbnails = async (list) => new Map(list.map((p) => [p.id, colour([255, 0, 0])]));
+  const out = await compareSnapshots({ before, after, source, language: 'en' });
+  const map = decodePng(out.images.find((i) => i.file === 'review-pages.png').png);
+  let blue = 0, red = 0;
+  for (let k = 0; k < map.data.length; k += 4) {
+    const [r, g, b] = [map.data[k], map.data[k + 1], map.data[k + 2]];
+    if (b > 200 && r < 60 && g < 60) blue++;
+    if (r > 200 && b < 60 && g < 60) red++;
+  }
+  assert.ok(blue > 1000, `the BEFORE row shows the snapshot renders (${blue} blue px)`);
+  assert.ok(red > 1000, `the AFTER row shows the current pages (${red} red px)`);
 });
