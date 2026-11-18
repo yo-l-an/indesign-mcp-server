@@ -57,7 +57,10 @@ async function test(name, fn) {
   const started = Date.now();
   try {
     // Every test starts with one of our own documents active, never a document the user had open
-    const start = testDoc && createdDocs.includes(testDoc) ? testDoc : flyer;
+    let start = testDoc && createdDocs.includes(testDoc) ? testDoc : flyer;
+    // A filtered run may skip the test that creates the scratch document: work in a new one of our
+    // own, so no test ever acts on a document that was already open (the active document)
+    if (process.env.TEST_FILTER && !(start && createdDocs.includes(start))) start = flyer = await newDoc({ preset: 'A5', orientation: 'Landscape', pages: 2 });
     if (start && createdDocs.includes(start)) await call('activate_document', { name: start });
     await fn();
     results.push({ name, ok: true });
