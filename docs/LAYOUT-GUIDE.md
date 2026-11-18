@@ -121,6 +121,8 @@ Objects are placed absolutely, so a group earns its place only where objects mov
 
 Single frames, backgrounds and panels stay ungrouped. Name each group by its role, in the PM's language ("Encadré", "Motif", "Bloc titre"); `name_object` names a single object whose role its content does not show ("Masque"). A group takes the stacking level of its topmost member: check `list_page_items` and `render_preview` after grouping.
 
+Adding to a finished group: `move_into_group({ ids, groupId, index | inFrontOf | behind })`. The objects keep their page position; the group keeps its name, opacity, effects and place in the stack, and gets a new id (in the result): use that id from then on. Stacking a single object exactly: `bring_to_front({ id, inFrontOf })` / `send_to_back({ id, behind })`, with a reference in the same group (or both on the page, same layer).
+
 Content inside a shape (a photo collage in a circle, a pattern clipped by a panel): `paste_into({ ids, shapeId, name })`. The objects keep their page position, two or more become one group named `name` (default "Contenu") inside the shape, and the shape must be empty. Every object gets a new id: take the new ids from the result (old → new) for the next steps, and tell the user the clipboard now holds the cut objects. `review_compare` shows them as moved into the shape.
 
 Renaming: `set_layer({ name, newName })`, `set_master({ master, newName, prefix })`, `modify_paragraph_style` / `modify_character_style` / `modify_object_style` / `update_color_swatch` with `newName`.

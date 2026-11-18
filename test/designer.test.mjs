@@ -120,3 +120,22 @@ test('page shadows: one per spread, never on a page, no light row under the page
   assert.ok(px(30, 60) < 255);            // right under the page edge: shadow, no white row
   assert.ok(px(30, 60) <= px(30, 63));    // fading out
 });
+
+test('move_into_group and stacking by reference: scripts parse, arguments checked first', async () => {
+  for (const [name, args] of [
+    ['move_into_group', { ids: [5, 6], groupId: 9 }],
+    ['move_into_group', { ids: [5], groupId: 9, index: 1 }],
+    ['move_into_group', { ids: [5], groupId: 9, behind: 3 }],
+    ['bring_to_front', { id: 5, inFrontOf: 3 }],
+    ['send_to_back', { id: 5, behind: 3 }],
+    ['paste_into', { ids: [5, 6], shapeId: 9, name: 'Collage' }],
+  ]) {
+    const s = await scriptOf(name, args);
+    assert.ok(parses(s).ok, `${name}: ${parses(s).message}`);
+  }
+  assert.match(await scriptOf('bring_to_front', { id: 5, inFrontOf: 3 }), /it\.bringToFront\(ref\)/);
+  assert.match(await scriptOf('send_to_back', { id: 5 }), /it\.sendToBack\(\);/);
+  assert.match((await runTool('move_into_group', { ids: [5], groupId: 9, index: 1, behind: 3 })).error.message, /one of inFrontOf, behind, index/);
+  assert.match((await runTool('move_into_group', { ids: [9], groupId: 9 })).error.message, /also in ids/);
+  assert.match((await runTool('paste_into', { ids: [9], shapeId: 9 })).error.message, /also in ids/);
+});

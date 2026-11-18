@@ -1405,6 +1405,53 @@ async function main() {
     await closeDoc(name);
   });
 
+  await test('move_into_group keeps the group (name, opacity, place in the stack); bring_to_front / send_to_back by reference', async () => {
+    const name = await newDoc({ preset: 'A5' });
+    testDoc = name;
+    const under = idOf(await call('create_rectangle', { x: 0, y: 0, width: 148, height: 100 }));
+    const a = idOf(await call('create_rectangle', { x: 10, y: 10, width: 20, height: 20 }));
+    const b = idOf(await call('create_ellipse', { x: 40, y: 10, width: 20, height: 20 }));
+    const c = idOf(await call('create_rectangle', { x: 70, y: 10, width: 20, height: 20 }));
+    let out = await call('group_objects', { ids: [a, b, c], name: 'Logo' });
+    const g = idOf(out);
+    await call('set_object_opacity', { id: g, opacity: 60 });
+    await call('set_gradient_feather', { id: g, type: 'linear', angle: 90, startOpacity: 100, endOpacity: 20 });
+    const over = idOf(await call('create_text_frame', { content: 'over', x: 0, y: 0, width: 20, height: 8 }));
+    const n = idOf(await call('create_rectangle', { x: 10, y: 50, width: 25, height: 15 }));
+    await call('prepare_edit', { pages: ['1'], reason: 'group test', backup: false, listObjects: false });
+    out = await call('move_into_group', { ids: [n], groupId: g, index: 1 });
+    const ng = Number(out.match(/new id: (\d+)/)?.[1]);
+    assert(ng && ng !== g, `the group gets a new id: ${out}`);
+    assert(!/Not carried over/.test(out), `every group setting carried over: ${out}`);
+    const order = out.match(/front to back: ([\d, ]+)/)[1].split(', ').map(Number);
+    eq(order[1], n, `the rectangle is second in the group (${order})`);
+    eq(order.length, 4, 'four members');
+    const items = await call('list_page_items', { pageIndex: 0 });
+    assert(new RegExp(`Group id=${ng}\\b[^\\n]*name="Logo"`).test(items), `name kept: ${items}`);
+    const lines = items.split('\n').filter((l) => new RegExp(`group=${ng}\\b`).test(l));
+    assert(new RegExp(`id=${n}\\b`).test(lines[1]), `list_page_items lists it second in the group: ${lines.join(' | ')}`);
+    const gi = await call('get_object_info', { id: ng });
+    assert(/opacity[^\n]*60/i.test(gi) && /gradientFeather/.test(gi), `opacity and effect kept: ${gi}`);
+    const pos = geo(await call('get_object_info', { id: n }));
+    near(pos.x, 10, 0.01, 'the rectangle keeps its x'); near(pos.y, 50, 0.01, 'and its y');
+    {   // the group keeps its place: still behind the text frame created after it, in front of the background
+      const ids = [...items.matchAll(/ id=(\d+)/g)].map((m) => Number(m[1]));
+      assert(ids.indexOf(over) < ids.indexOf(ng) && ids.indexOf(ng) < ids.indexOf(under), `stacking kept: ${ids}`);
+    }
+    const review = await call('review_compare', { language: 'en', maxImages: 0 });
+    assert(/Moved into/.test(review) && !/Removed/.test(review), `review: ${review.slice(0, 1500)}`);
+    // stacking by reference inside the group: c directly in front of a
+    out = await call('bring_to_front', { id: c, inFrontOf: a });
+    let mem = (await call('list_page_items', { pageIndex: 0 })).split('\n').filter((l) => new RegExp(`group=${ng}\\b`).test(l)).map((l) => Number(l.match(/ id=(\d+)/)[1]));
+    eq(mem.indexOf(c) + 1, mem.indexOf(a), `c directly in front of a (${mem})`);
+    await call('send_to_back', { id: b, behind: n });
+    mem = (await call('list_page_items', { pageIndex: 0 })).split('\n').filter((l) => new RegExp(`group=${ng}\\b`).test(l)).map((l) => Number(l.match(/ id=(\d+)/)[1]));
+    eq(mem.indexOf(n) + 1, mem.indexOf(b), `b directly behind n (${mem})`);
+    await fails('bring_to_front', { id: over, inFrontOf: a }, /same parent/);
+    await fails('move_into_group', { ids: [over], groupId: ng, inFrontOf: under }, /not a member/);
+    await closeDoc(name);
+  });
+
   await test('duplicate_object, align_objects, distribute_objects', async () => {
     const r = idOf(await call('create_rectangle', { x: 10, y: 10, width: 20, height: 10, fillColor: 'BandGreen' }));
     let out = await call('duplicate_object', { id: r, count: 3, offsetX: 30, offsetY: 5 });

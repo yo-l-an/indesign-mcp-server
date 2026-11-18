@@ -68,7 +68,7 @@ create_path_from_svg({
 ## Tools
 
 <!-- TOOLS:START -->
-_142 tools. Generated from the server's tool schemas by `npm run docs`._
+_143 tools. Generated from the server's tool schemas by `npm run docs`._
 
 ### Workflow, review and backups
 
@@ -1078,23 +1078,25 @@ Move an object (by id) to another page, by page name ("+N" = N-th page). It keep
 
 #### `send_to_back`
 
-Send an object to the back of the stacking order
+Send an object to the back of the stacking order, or directly behind another object (behind: an id with the same parent: both on the page, or in the same group)
 
 | Parameter | Type | Description |
 |---|---|---|
 | `id` | number | Stable object id (from create_* tools, place_image or list_page_items). Preferred. |
 | `pageIndex` | number | Page index (0-based); used with index Default: `0`. |
 | `index` | number | Position in list_page_items for that page (changes when objects are added/reordered) |
+| `behind` | number | Id of the object to sit directly behind (same group or both on the page) |
 
 #### `bring_to_front`
 
-Bring an object to the front of the stacking order
+Bring an object to the front of the stacking order, or directly in front of another object (inFrontOf: an id with the same parent: both on the page, or in the same group)
 
 | Parameter | Type | Description |
 |---|---|---|
 | `id` | number | Stable object id (from create_* tools, place_image or list_page_items). Preferred. |
 | `pageIndex` | number | Page index (0-based); used with index Default: `0`. |
 | `index` | number | Position in list_page_items for that page (changes when objects are added/reordered) |
+| `inFrontOf` | number | Id of the object to sit directly in front of (same group or both on the page) |
 
 #### `send_backward`
 
@@ -1937,6 +1939,18 @@ Read NOTES.md, the improvement notes written so far for the author of this serve
 _No parameters._
 
 ### Other
+
+#### `move_into_group`
+
+Add objects to an existing group: they keep their page position, the group keeps its name, label, opacity, effects and object style and its place in the stacking order. Stacking inside the group: inFrontOf or behind (a member id), or index (0 = frontmost, the order list_page_items prints); default frontmost. InDesign re-creates the group to do this: the group gets a NEW id (given in the result); the objects keep theirs.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `ids` *(required)* | number[] | Ids of the objects to add (on the group's spread, not in another group) |
+| `groupId` *(required)* | number | Id of the group |
+| `inFrontOf` | number | Member id: the objects go directly in front of it |
+| `behind` | number | Member id: the objects go directly behind it |
+| `index` | number | Position among the members after the move, 0 = frontmost |
 
 #### `paste_into`
 

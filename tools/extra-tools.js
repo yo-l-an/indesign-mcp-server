@@ -9,6 +9,7 @@
 import { jsStr, jsJson, jsNum, jsEnum } from '../lib/script-runtime.js';
 import { deltaE, toHex } from '../lib/color.js';
 import { has } from '../lib/tool-context.js';
+import { recordIdMoves } from '../lib/review.js';
 
 // autosizeReference -> AutoSizingReferenceEnum
 const AUTOSIZE_REFERENCES = {
@@ -116,8 +117,16 @@ export function createExtraTools(ctx) {
     ].map(([name, description]) => ({
       name,
       modifies: true,
-      description,
-      inputSchema: { type: 'object', properties: { ...OBJECT_PROPS } },
+      description: name === 'bring_to_front' ? `${description}, or directly in front of another object (inFrontOf: an id with the same parent: both on the page, or in the same group)`
+        : name === 'send_to_back' ? `${description}, or directly behind another object (behind: an id with the same parent: both on the page, or in the same group)` : description,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          ...OBJECT_PROPS,
+          ...(name === 'bring_to_front' ? { inFrontOf: { type: 'number', description: 'Id of the object to sit directly in front of (same group or both on the page)' } } : {}),
+          ...(name === 'send_to_back' ? { behind: { type: 'number', description: 'Id of the object to sit directly behind (same group or both on the page)' } } : {}),
+        },
+      },
     })),
     {
       name: 'set_object_opacity',
@@ -198,6 +207,22 @@ export function createExtraTools(ctx) {
           name: { type: 'string', description: 'Name of the group: what it is on the page' },
         },
         required: ['ids'],
+      },
+    },
+    {
+      name: 'move_into_group',
+      modifies: true,
+      description: 'Add objects to an existing group: they keep their page position, the group keeps its name, label, opacity, effects and object style and its place in the stacking order. Stacking inside the group: inFrontOf or behind (a member id), or index (0 = frontmost, the order list_page_items prints); default frontmost. InDesign re-creates the group to do this: the group gets a NEW id (given in the result); the objects keep theirs.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          ids: { type: 'array', items: { type: 'number' }, description: 'Ids of the objects to add (on the group\'s spread, not in another group)' },
+          groupId: { type: 'number', description: 'Id of the group' },
+          inFrontOf: { type: 'number', description: 'Member id: the objects go directly in front of it' },
+          behind: { type: 'number', description: 'Member id: the objects go directly behind it' },
+          index: { type: 'number', description: 'Position among the members after the move, 0 = frontmost' },
+        },
+        required: ['ids', 'groupId'],
       },
     },
     {
@@ -540,6 +565,96 @@ export function createExtraTools(ctx) {
       return respond(await run(script), 'Group Objects');
     },
 
+    async move_into_group(args) {
+      if (!Array.isArray(args.ids) || !args.ids.length) throw new Error('ids: the objects to add to the group');
+      const ids = args.ids.map((v, i) => jsNum(v, `ids[${i}]`));
+      const groupId = jsNum(args.groupId, 'groupId');
+      const where = ['inFrontOf', 'behind', 'index'].filter((k) => has(args[k]));
+      if (where.length > 1) throw new Error(`Give one of inFrontOf, behind, index (got ${where.join(', ')})`);
+      if (ids.includes(groupId)) throw new Error(`The group ${groupId} is also in ids`);
+      const ref = has(args.inFrontOf) ? jsNum(args.inFrontOf, 'inFrontOf') : has(args.behind) ? jsNum(args.behind, 'behind') : null;
+      const index = has(args.index) ? Math.floor(jsNum(args.index, 'index')) : 0;
+      if (index < 0) throw new Error('index must be >= 0 (0 = frontmost)');
+      // No DOM call adds to a group (move / duplicate into a group are refused, paste in place lands
+      // on the spread): ungroup, place the objects among the members, group again, restore the group
+      const script = `
+        var doc = __requireDoc();
+        var g = __findById(doc, ${groupId});
+        if (!g) throw new Error("No object with id ${groupId}");
+        if (g.constructor.name !== "Group") throw new Error("Object ${groupId} is a " + g.constructor.name + ", not a group");
+        if (g.parent instanceof Group) throw new Error("Group ${groupId} is inside another group: adding to a nested group is not supported (ungroup the outer group first)");
+        if (g.parent instanceof Character) throw new Error("Group ${groupId} is anchored in text: move it out of the text first");
+        if (g.locked) throw new Error("Group ${groupId} is locked: unlock it first");
+        function spreadOf(it) { var s = it.parent; try { while (s && !(s instanceof Spread) && !(s instanceof MasterSpread)) s = s.parent; } catch (e) {} return s; }
+        var members = g.pageItems.everyItem().getElements();   // front to back
+        var memberIds = [];
+        for (var i = 0; i < members.length; i++) memberIds.push(members[i].id);
+        var ids = ${jsJson(ids)}, items = [];
+        for (var j = 0; j < ids.length; j++) {
+          var it = __findById(doc, ids[j]);
+          if (!it) throw new Error("No object with id " + ids[j]);
+          for (var q = 0; q < memberIds.length; q++) if (memberIds[q] === ids[j]) throw new Error("Object " + ids[j] + " is already in group ${groupId}");
+          if (it.parent instanceof Group) throw new Error("Object " + ids[j] + " is in group " + it.parent.id + ": ungroup it first, or add that whole group");
+          if (it.parent instanceof Character) throw new Error("Object " + ids[j] + " is anchored in text");
+          if (spreadOf(it) !== spreadOf(g)) throw new Error("Object " + ids[j] + " is on another spread than group ${groupId}");
+          items.push(it);
+        }
+        var ref = null, refId = ${ref === null ? 'null' : ref}, before = ${has(args.behind) ? 'false' : 'true'}, index = ${index};
+        if (refId !== null) {
+          for (var r = 0; r < members.length; r++) if (members[r].id === refId) ref = members[r];
+          if (!ref) throw new Error("Object " + refId + " is not a member of group ${groupId} (members: " + memberIds.join(", ") + ")");
+        } else if (index >= members.length) { ref = members[members.length - 1]; before = false; }
+        else { ref = members[index]; before = true; }
+        // what the new group must carry over
+        var keep = { name: g.name, label: g.label, visible: g.visible, layer: g.itemLayer, style: null };
+        try { keep.style = g.appliedObjectStyle; } catch (eS) {}
+        var ts = g.transparencySettings, fx = {};
+        var FX = ["blendingSettings", "dropShadowSettings", "featherSettings", "innerShadowSettings", "outerGlowSettings", "innerGlowSettings", "bevelAndEmbossSettings", "satinSettings", "directionalFeatherSettings", "gradientFeatherSettings"];
+        for (var f = 0; f < FX.length; f++) { try { fx[FX[f]] = ts[FX[f]].properties; } catch (eF) {} }
+        g.ungroup();
+        var all = members.slice(0), lost = [], failed = null;
+        try {
+          // first object at the target, each next one directly behind the previous: the ids' order is kept
+          var prev = null;
+          for (var k = 0; k < items.length; k++) {
+            var o = items[k];
+            if (o.itemLayer !== ref.itemLayer) o.itemLayer = ref.itemLayer;
+            if (prev) o.sendToBack(prev);
+            else if (before) o.bringToFront(ref);
+            else o.sendToBack(ref);
+            prev = o;
+            all.push(o);
+          }
+        } catch (eMove) {
+          failed = eMove;   // the group is made again from what is in place, then the error is reported
+        }
+        var ng = doc.groups.add(all);
+        ng.name = keep.name;
+        try { ng.label = keep.label; } catch (eL) {}
+        try { if (keep.style) ng.appliedObjectStyle = keep.style; } catch (eO) {}
+        for (var key in fx) {
+          var props = fx[key], target = ng.transparencySettings[key];
+          for (var pn in props) { if (pn === "parent" || pn === "isValid") continue; try { target[pn] = props[pn]; } catch (eP) { lost.push(key + "." + pn); } }
+        }
+        ng.visible = keep.visible;
+        if (failed) throw new Error("Could not place the objects in group ${groupId} (" + failed.message + "); the group was made again as " + ng.id + " with the objects placed so far");
+        var order = ng.pageItems.everyItem().getElements(), ord = [];
+        for (var z = 0; z < order.length; z++) ord.push(order[z].id);
+        "Added " + items.length + " object(s) to group: " + __describe(ng) + (ng.name ? " name=" + ng.name : "") +
+          "\\nThe group has a new id: " + ng.id + " (was ${groupId}; InDesign re-creates a group to add objects). Opacity " + ng.transparencySettings.blendingSettings.opacity + "%." +
+          "\\nMembers, front to back: " + ord.join(", ") +
+          (lost.length ? "\\nNot carried over: " + lost.join(", ") : "") +
+          "\\n@@MOVES " + ng.id + "|" + ng.name;
+      `;
+      const out = String(await run(script));
+      const [text, tail = ''] = out.split('\n@@MOVES ');
+      const [newId, ...nameParts] = tail.split('|');
+      const gName = nameParts.join('|');
+      const into = { type: 'Group', id: Number(newId), ...(gName ? { name: gName } : {}) };
+      recordIdMoves(ctx.workflow, [{ from: groupId, to: Number(newId) }, ...ids.map((id) => ({ from: id, to: id, into }))]);
+      return respond(text, 'Move Into Group');
+    },
+
     async name_object(args) {
       const script = `
         var doc = __requireDoc();
@@ -680,11 +795,21 @@ export function createExtraTools(ctx) {
   };
   for (const [tool, [method, label]] of Object.entries(zOrder)) {
     handlers[tool] = async (args) => {
+      const refKey = tool === 'bring_to_front' ? 'inFrontOf' : tool === 'send_to_back' ? 'behind' : null;
+      const ref = refKey && has(args[refKey]) ? jsNum(args[refKey], refKey) : null;
       const script = `
         var doc = __requireDoc();
         var it = ${objExpr(args)};
-        it.${method}();
-        "${label}: " + __describe(it);
+        ${ref === null ? `it.${method}();
+        "${label}: " + __describe(it);` : `
+        var ref = __findById(doc, ${ref});
+        if (!ref) throw new Error("No object with id ${ref}");
+        if (ref.id === it.id) throw new Error("${refKey} is the object itself");
+        var pa = it.parent, pb = ref.parent;
+        if (pa !== pb && (pa instanceof Group || pb instanceof Group)) throw new Error("Objects " + it.id + " and ${ref} do not have the same parent (" + (pa instanceof Group ? "group " + pa.id : "page") + " / " + (pb instanceof Group ? "group " + pb.id : "page") + "): stack objects of one group, or two objects on the page");
+        if (it.itemLayer !== ref.itemLayer) throw new Error("Objects " + it.id + " and ${ref} are on different layers: the layer order decides (move_to_layer, move_layer)");
+        it.${method}(ref);
+        "${label} ${tool === 'bring_to_front' ? 'in front of' : 'behind'} ${ref}: " + __describe(it);`}
       `;
       return respond(await run(script), label);
     };
