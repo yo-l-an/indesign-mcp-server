@@ -559,7 +559,7 @@ Analyze imported text for common problems before cleaning. Shows what issues exi
 
 #### `list_grep_searches`
 
-List all saved GREP searches in the document (like DATUM search for dates)
+List the saved GREP queries of Find/Change (they belong to InDesign, not to the document): your own queries and the ones InDesign ships, each with its find and change expressions, to reuse with find_text / find_replace_text (useGrep: true).
 
 _No parameters._
 

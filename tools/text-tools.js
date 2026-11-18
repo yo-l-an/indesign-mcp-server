@@ -146,7 +146,7 @@ export function createTextTools(ctx) {
     {
       name: 'list_grep_searches',
       modifies: false,
-      description: 'List all saved GREP searches in the document (like DATUM search for dates)',
+      description: 'List the saved GREP queries of Find/Change (they belong to InDesign, not to the document): your own queries and the ones InDesign ships, each with its find and change expressions, to reuse with find_text / find_replace_text (useGrep: true).',
       inputSchema: {
         type: 'object',
         properties: {}
@@ -971,50 +971,40 @@ export function createTextTools(ctx) {
     },
 
     async listGrepSearches() {
+      // Saved queries are XML files: the user's in the preferences folder (beside Scripts), InDesign's
+      // in its Presets folder, one subfolder per language
       const script = `
-        if (app.documents.length === 0) {
-          throw new Error("No document open");
-        } else {
-          var doc = app.activeDocument;
-          try {
-            var result = "=== SAVED GREP SEARCHES ===\\n";
-          
-            if (doc.findGrepPreferences.length === 0) {
-              result += "No saved GREP searches found in this document.\\n";
-              result += "TIP: Create and save GREP searches in Find/Change dialog.";
-            } else {
-              for (var i = 0; i < doc.findGrepPreferences.length; i++) {
-                var grepSearch = doc.findGrepPreferences[i];
-                result += "Search " + (i + 1) + ": " + (grepSearch.name || "Unnamed") + "\\n";
-                result += "  Pattern: " + grepSearch.findWhat + "\\n";
-                if (grepSearch.changeTo) {
-                  result += "  Replace: " + grepSearch.changeTo + "\\n";
-                }
-                result += "\\n";
-              }
-            
-              // Special note about DATUM search
-              try {
-                var datumQuery = doc.findGrepPreferences.itemByName("DATUM");
-                if (datumQuery.isValid) {
-                  result += "✅ DATUM search found - will be used for date typography fixes.";
-                } else {
-                  result += "❌ DATUM search not found - typography fixes will use fallback patterns.";
-                }
-              } catch (e) {
-                result += "❌ DATUM search not accessible - using fallback patterns.";
-              }
-            }
-          
-            result;
-          } catch (e) {
-            throw new Error("Error listing GREP searches: " + e.message);
+        function unxml(t) { return t.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&"); }
+        function attr(xml, tag) { var m = new RegExp("<" + tag + " value=\\"([^\\"]*)\\"").exec(xml); return m ? unxml(m[1]) : ""; }
+        function read(folder, label, out) {
+          if (!folder || !folder.exists) return;
+          var files = folder.getFiles("*.xml");
+          for (var i = 0; i < files.length; i++) {
+            var f = files[i];
+            f.encoding = "UTF-8";
+            if (!f.open("r")) continue;
+            var xml = f.read();
+            f.close();
+            out.push({ name: decodeURI(f.name).replace(/\\.xml$/, ""), source: label, find: attr(xml, "FindExpression"), change: attr(xml, "ReplaceExpression") });
           }
         }
+        var list = [], userDir = null, presetDir = null;
+        try { userDir = Folder(app.scriptPreferences.scriptsFolder.parent.fsName + "/Find-Change Queries/GREP"); } catch (e) {}
+        read(userDir, "yours", list);
+        try {
+          var root = Folder(app.filePath.fsName + "/Presets/Find-Change Queries/GREP");
+          var langs = root.exists ? root.getFiles(function (x) { return x instanceof Folder; }) : [];
+          presetDir = langs.length ? langs[0] : root;
+          // the preferences folder is named after the interface language (e.g. fr_FR), like the preset subfolders
+          var lang = ""; try { lang = decodeURI(app.scriptPreferences.scriptsFolder.parent.name); } catch (e) {}
+          for (var l = 0; l < langs.length; l++) if (decodeURI(langs[l].name) === lang) presetDir = langs[l];
+        } catch (e) {}
+        read(presetDir, "InDesign", list);
+        var lines = [];
+        for (var k = 0; k < list.length; k++) lines.push((k + 1) + ". " + list[k].name + " (" + list[k].source + ")\\n   find: " + list[k].find + (list[k].change ? "\\n   change: " + list[k].change : ""));
+        "Saved GREP queries: " + list.length + " (your folder: " + (userDir ? userDir.fsName : "?") + ")" + (lines.length ? "\\n" + lines.join("\\n") : "\\nNone found.");
       `;
-
-      const result = await this.run(script);
-      return this.respond(result, "GREP Searches");
+      return this.respond(await this.run(script), 'GREP Searches');
     },
 
     async cleanImportedText(args) {
