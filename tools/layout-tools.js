@@ -288,12 +288,25 @@ export function createLayoutTools(ctx) {
       if (sp.allowPageShuffle === false) fixed.push((__nl > 1 ? ly0 + ":" : "") + nm.join("-"));
     }
     L.push("Spreads (" + doc.spreads.length + "): " + spr.join(" | ") + (dp.allowPageShuffle ? "" : " — page shuffling off") + (fixed.length ? " — kept together: " + fixed.join(", ") : ""));
-    // pages whose size differs from the first page of their layout
-    var odd = [], first = {};
+    // pages whose size differs from the usual size of their layout (its most common page size; a tie
+    // goes to the document size), so a single resized page is the one listed, wherever it is
+    var odd = [], sizes = {}, order = [], usual = {};
+    var key = function (w, h) { return Math.round(w * 10) + "x" + Math.round(h * 10); };
+    var docKey = key(dp.pageWidth, dp.pageHeight);
     for (var p = 0; p < doc.pages.length; p++) {
-      var pb = doc.pages[p].bounds, pw = pb[3] - pb[1], ph = pb[2] - pb[0], lk = __lay(doc.pages[p]);
-      if (!first[lk]) { first[lk] = [pw, ph]; if (__nl > 1) L.push("Layout " + lk + ": " + __mm(pw) + " × " + __mm(ph) + " mm"); continue; }
-      if (Math.abs(pw - first[lk][0]) > 0.1 || Math.abs(ph - first[lk][1]) > 0.1) odd.push(__ref(doc.pages[p]) + " (" + __mm(pw) + "×" + __mm(ph) + ")");
+      var pb = doc.pages[p].bounds, lk = __lay(doc.pages[p]), sk = key(pb[3] - pb[1], pb[2] - pb[0]);
+      if (!sizes[lk]) { sizes[lk] = {}; order.push(lk); }
+      sizes[lk][sk] = (sizes[lk][sk] || 0) + 1;
+    }
+    for (var o = 0; o < order.length; o++) {
+      var best = null, n = -1, cs = sizes[order[o]];
+      for (var c in cs) if (cs[c] > n || (cs[c] === n && c === docKey)) { best = c; n = cs[c]; }
+      usual[order[o]] = best;
+      if (__nl > 1) { var wh = best.split("x"); L.push("Layout " + order[o] + ": " + __mm(wh[0] / 10) + " × " + __mm(wh[1] / 10) + " mm"); }
+    }
+    for (var p2 = 0; p2 < doc.pages.length; p2++) {
+      var pb2 = doc.pages[p2].bounds, pw = pb2[3] - pb2[1], ph = pb2[2] - pb2[0];
+      if (key(pw, ph) !== usual[__lay(doc.pages[p2])]) odd.push(__ref(doc.pages[p2]) + " (" + __mm(pw) + "×" + __mm(ph) + ")");
     }
     if (odd.length) L.push("Pages of another size: " + odd.join(", "));
     var gp = doc.gridPreferences;
