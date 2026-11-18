@@ -26,7 +26,7 @@
     "desktop-publishing",
     "claude"
   ],
-  "author": "lucdesign",
+  "author": "yo-l-an",
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.31.0",
@@ -37,10 +37,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/lucdesign/indesign-mcp-server.git"
+    "url": "git+https://github.com/yo-l-an/indesign-mcp-server.git"
   },
   "bugs": {
-    "url": "https://github.com/lucdesign/indesign-mcp-server/issues"
+    "url": "https://github.com/yo-l-an/indesign-mcp-server/issues"
   },
-  "homepage": "https://github.com/lucdesign/indesign-mcp-server#readme"
+  "homepage": "https://github.com/yo-l-an/indesign-mcp-server#readme"
 }

@@ -146,10 +146,14 @@ Set these in the `env` block of the client configuration. All are optional.
 
 Issues and pull requests are welcome. `npm run test:offline` runs the tests without InDesign, and `npm test` runs them against a live InDesign. Start with [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
-Agents that use the server can leave notes for the maintainer: bugs, missing features, better ways (`add_improvement_note`). These notes feed the next changes.
+Agents that use the server can leave notes for the maintainer: bugs, missing features, better ways (`add_improvement_note`). These notes feed the next changes. When a tool fails, an agent first checks for updates (`check_server_updates`): a git clone fast-forwards to the latest commits, a downloaded copy is left as it is.
 
 ## License
 
-MIT, see [LICENSE](LICENSE). Originally created by [lucdesign](https://github.com/lucdesign/indesign-mcp-server).
+MIT, see [LICENSE](LICENSE).
+
+## Credits
+
+This server started from [indesign-mcp-server](https://github.com/lucdesign/indesign-mcp-server) by lucdesign (MIT), since rebuilt and extended.
 
 PDF files are read with [pdf.js](https://mozilla.github.io/pdf.js/) (Apache 2.0). The review images use glyphs of [Inter](https://rsms.me/inter/) by Rasmus Andersson (SIL Open Font License 1.1).
