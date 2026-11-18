@@ -178,15 +178,21 @@ export function createMasterTools(ctx) {
     var isFolio = {};
     for (var f = 0; f < folios.length; f++) isFolio[folios[f]] = 1;
     var lines = [], sigs = {}, copies = 0, originals = [];
+    // the master page a page of this side shows (single-page masters: their only page)
+    function __side(pg) {
+      var ti = m.pages.length - 1;
+      for (var q = 0; q < m.pages.length; q++) if (String(m.pages[q].side) === String(pg.side)) ti = q;
+      return ti;
+    }
     for (var i = 0; i < ids.length; i++) {
       var it = __findById(doc, ids[i]);
       if (!it) throw new Error("No object with id " + ids[i]);
       var pg = it.parentPage;
       if (!pg) throw new Error("Object " + ids[i] + " is on the pasteboard: put it on a page first");
-      // the master page of the same side (single-page masters: their only page)
-      var target = m.pages[m.pages.length - 1];
-      for (var q = 0; q < m.pages.length; q++) if (String(m.pages[q].side) === String(pg.side)) target = m.pages[q];
-      sigs[__sig(it, ${t})] = 1;
+      var ti = __side(pg), target = m.pages[ti];
+      // matches are removed only on pages that show this master page: a left page keeps its object
+      // when only the right master page received the copy
+      sigs[ti + "|" + __sig(it, ${t})] = 1;
       var b = it.geometricBounds;
       var dup = it.duplicate(target);
       // keep the same place on the page (the master page may sit elsewhere in its spread)
@@ -215,7 +221,7 @@ export function createMasterTools(ctx) {
           var keep = false;
           for (var z = 0; z < ids.length; z++) if (own[k].id === ids[z]) keep = true;
           if (keep) continue;
-          if (sigs[__sig(own[k], ${t})]) { own[k].remove(); removed++; }
+          if (sigs[__side(page) + "|" + __sig(own[k], ${t})]) { own[k].remove(); removed++; }
         }
       ` : ''}
     }
