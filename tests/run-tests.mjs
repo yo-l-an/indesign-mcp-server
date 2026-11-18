@@ -286,7 +286,7 @@ async function main() {
     command: 'node',
     args: [path.join(__dirname, '..', 'index.js')],
     // optional real-world graphics: INDESIGN_TEST_AI=/path/file.ai  INDESIGN_TEST_EPS=/path/file.eps (their folders are made readable for the run)
-    env: { ...process.env, INDESIGN_DEFAULT_SAVE_DIR: path.join(TMP, 'Documents'), INDESIGN_ALLOWED_DIRS: [TMP, ...['INDESIGN_TEST_AI', 'INDESIGN_TEST_EPS', 'INDESIGN_TEST_JPG'].filter((k) => process.env[k]).map((k) => path.dirname(process.env[k]))].join(path.delimiter), INDESIGN_ALLOW_ARBITRARY_CODE: '' },
+    env: { ...process.env, INDESIGN_DEFAULT_SAVE_DIR: path.join(TMP, 'Documents'), INDESIGN_NOTES_PATH: path.join(TMP, 'NOTES.md'), INDESIGN_ALLOWED_DIRS: [TMP, ...['INDESIGN_TEST_AI', 'INDESIGN_TEST_EPS', 'INDESIGN_TEST_JPG'].filter((k) => process.env[k]).map((k) => path.dirname(process.env[k]))].join(path.delimiter), INDESIGN_ALLOW_ARBITRARY_CODE: '' },
   });
   client = new Client({ name: 'indesign-mcp-tests', version: '1' }, { capabilities: {} });
   await client.connect(transport);
@@ -2156,6 +2156,229 @@ async function main() {
     testDoc = flyer;
   });
 
+
+  console.log('\nLayout, masters, layers, backups (Part E)');
+  // Each test builds its own facing-pages A4 document and gives the previous test document back
+  const layoutDoc = async (extra = {}) => newDoc({ preset: 'A4', pages: 4, facingPages: true, marginTop: 15, marginBottom: 15, marginLeft: 15, marginRight: 15, ...extra });
+
+  await test('layout setup: document setup, master margins and columns, grid guides, guides, baseline grid, page grid', async () => {
+    const previous = testDoc;
+    const name = await layoutDoc();
+    testDoc = name;
+    let out = await call('get_layout_setup');
+    assert(/210 × 297 mm portrait, 4 pages, facing pages/.test(out) && /Spreads \(3\): 1 \| 2 3 \| 4/.test(out), out);
+    out = await call('set_document_setup', { startPageNumber: 3, bleed: 3, slug: 5, intent: 'print' });
+    assert(/start page 3/.test(out) && /bleed 3\.0\/3\.0\/3\.0\/3\.0 mm/.test(out) && /slug 5\.0 mm/.test(out), out);
+    out = await call('set_margins_columns', { masters: ['A'], top: 20, bottom: 25, inside: 18, outside: 12, columns: 4, gutter: 5 });
+    assert((out.match(/top 20 · bottom 25 · inside 18 · outside 12 mm, 4 columns \(gutter 5 mm\)/g) || []).length === 2, `both master pages: ${out}`);
+    out = await call('create_grid_guides', { masters: ['A'], columns: 4, rows: 6, columnGutter: 5, rowGutter: 5 });
+    assert(/20 guides – 4 columns of 41\.2 mm, gutter 5 mm, 6 rows of 37\.8 mm/.test(out), out);
+    out = await call('add_guides', { pages: ['3'], vertical: [50], horizontal: [100, 150] });
+    assert(/3 guide\(s\) added on page 3/.test(out), out);
+    out = await call('set_grids', { baselineIncrement: 14, baselineStart: 20, baselineRelativeTo: 'margin' });
+    assert(/every 14 pt \(4\.94 mm\) from 20 mm \(top margin\)/.test(out), out);
+    out = await call('get_page_grid', { page: '3', baseline: true });
+    assert(/guide \(x 50\)/.test(out) && /guide \(y 100\)/.test(out) && /master guide \(x 18\)/.test(out) && /baseline 1 \(y 35\)/.test(out), `guides, master guides and baselines: ${out.slice(0, 800)}`);
+    out = await call('delete_guides', { pages: ['3'], orientation: 'horizontal' });
+    assert(/page 3: 2/.test(out), out);
+    assert(!/guide \(y 100\)/.test(await call('get_page_grid', { page: '3' })), 'horizontal guides gone');
+    out = await call('get_layout_setup');
+    assert(/starts at page 3/.test(out) && /Bleed: top 3 · bottom 3 · inside 3 · outside 3 mm/.test(out) && /Baseline grid: every 14 pt from 20 mm \(top margin\)/.test(out), out);
+    assert(/A-[^\n]*top 20 · bottom 25 · inside 18 · outside 12 mm, 4 columns \(gutter 5 mm\); 0 object\(s\), 40 guide\(s\)/.test(out), `the master carries margins and guides: ${out}`);
+    await closeDoc(name);
+    testDoc = previous;
+  });
+
+  await test('snap_to_grid and fit_to_grid place objects on the columns and rows of the master grid', async () => {
+    const previous = testDoc;
+    const name = await layoutDoc();
+    testDoc = name;
+    await call('set_margins_columns', { masters: ['A'], top: 20, bottom: 25, inside: 18, outside: 12, columns: 4, gutter: 5 });
+    await call('set_margins_columns', { pages: ['1'], top: 20, bottom: 25, inside: 18, outside: 12, columns: 4, gutter: 5 });
+    await call('create_grid_guides', { masters: ['A'], columns: 4, rows: 6, columnGutter: 5, rowGutter: 5 });
+    const r = idOf(await call('create_rectangle', { x: 20, y: 31, width: 38, height: 40 }));
+    let out = await call('snap_to_grid', { ids: [r], dryRun: true });
+    assert(/Dry run/.test(out) && /x 20 → 18/.test(out), out);
+    near(geo(await call('get_object_info', { id: r })).x, 20, 0.01, 'a dry run changes nothing');
+    out = await call('snap_to_grid', { ids: [r] });
+    assert(/1 object\(s\) snapped/.test(out), out);
+    near(geo(await call('get_object_info', { id: r })).x, 18, 0.01, 'snapped onto the first column');
+    out = await call('fit_to_grid', { ids: [r], columns: [2, 3], rows: [1, 2], rowCount: 6, rowGutter: 5 });
+    const g = geo(await call('get_object_info', { id: r }));
+    near(g.x, 64.3, 0.1, 'column 2 starts at x 64.3'); near(g.w, 87.5, 0.2, 'columns 2–3 with their gutter');
+    near(g.y, 20, 0.1, 'row 1 starts at the top margin'); near(g.h, 80.7, 0.3, 'rows 1–2 with their gutter');
+    await fails('fit_to_grid', { ids: [r], columns: [2, 3], rows: [1, 2] }, /rowCount/);
+    await closeDoc(name);
+    testDoc = previous;
+  });
+
+  await test('sections, page-number character, spread options and page size', async () => {
+    const previous = testDoc;
+    const name = await layoutDoc();
+    testDoc = name;
+    let out = await call('set_section', { page: '3', startNumber: 1, style: 'i' });
+    assert(/Page names now: 1, 2, i, ii/.test(out), out);
+    const tf = idOf(await call('create_text_frame', { content: 'Page ', x: 20, y: 280, width: 40, height: 8, pageIndex: 2 }));
+    out = await call('insert_special_character', { frameId: tf, character: 'page_number' });
+    assert(/1 × page_number inserted/.test(out), out);
+    eq(inspect(`var st = app.activeDocument.textFrames.itemByID(${tf}).parentStory; return String(st.characters[-1].contents === SpecialCharacters.AUTO_PAGE_NUMBER);`), 'true', 'a real page-number character, not typed digits');
+    out = await call('set_section', { page: 'i', remove: true });
+    assert(/Page names now: 1, 2, 3, 4/.test(out), out);
+    out = await call('set_spread_options', { pages: ['2'], allowShuffle: false });
+    assert(/kept together/.test(out), out);
+    assert(/kept together: 2-3/.test(await call('get_layout_setup')), 'the spread is kept together');
+    out = await call('set_page_size', { pageIndexes: [3], width: 150, height: 200 });
+    assert(/150 x 200 mm/.test(out), out);
+    out = await call('get_layout_setup');
+    assert(/Pages of another size: 4 \(150×200\)/.test(out), `only the resized page is listed: ${out}`);
+    await fails('set_spread_options', { allowShuffle: false }, /Say which pages/);
+    await closeDoc(name);
+    testDoc = previous;
+  });
+
+  await test('masters: repeated items, create, copy with removeMatching on the right side only, override, rename, delete', async () => {
+    const previous = testDoc;
+    const name = await layoutDoc();
+    testDoc = name;
+    const foot = [];
+    for (const p of [0, 1, 2]) foot.push(idOf(await call('create_rectangle', { x: 0, y: 280, width: 210, height: 17, pageIndex: p })));
+    let out = await call('find_repeated_items');
+    assert(/1 object\(s\) on 3 pages: 1, 2, 3/.test(out) && /create_master\(/.test(out), out);
+    // the footer of right page 1 goes to the master's right page: left page 2 keeps its own
+    out = await call('create_master', { name: 'Chapitre', prefix: 'C', fromIds: [foot[0]], applyTo: ['1', '2', '3'], removeMatching: true });
+    assert(/Master C-Chapitre created/.test(out) && /1 matching object\(s\) removed/.test(out), out);
+    assert(new RegExp(`id=${foot[1]}\\b`).test(await call('list_page_items', { pageIndex: 1 })), 'left page 2 keeps its footer (the master has none on its left page)');
+    assert(!new RegExp(`id=${foot[2]}\\b`).test(await call('list_page_items', { pageIndex: 2 })), 'right page 3 shows the master footer instead of its own');
+    out = await call('copy_to_master', { master: 'C', ids: [foot[1]], removeOriginals: true });
+    assert(/1 object\(s\) copied into master C-Chapitre/.test(out), out);
+    out = await call('list_master_items', { master: 'C' });
+    assert(/Left page – 1 object\(s\)/.test(out) && /Right page – 1 object\(s\)/.test(out), out);
+    out = await call('list_master_items', { page: '3' });
+    const masterId = Number(out.match(/shown[^\n]*\n\s+id=(\d+)/)?.[1]);
+    assert(masterId, `page 3 shows a master object: ${out}`);
+    out = await call('override_master_items', { page: '3', all: true });
+    assert(new RegExp(`1 master object\\(s\\) overridden on page 3:\\n\\s+master id ${masterId} → id \\d+`).test(out), out);
+    assert(/Overridden on this page: 1/.test(await call('list_master_items', { page: '3' })), 'listed as overridden');
+    out = await call('remove_master_overrides', { page: '3', all: true, confirmDestructive: true });
+    assert(/1 override\(s\) removed on page 3/.test(out), out);
+    out = await call('apply_master', { pages: ['4'], master: 'C' });
+    assert(/applied to pages 4/.test(out), out);
+    out = await call('set_master', { master: 'C', newName: 'Ouverture', prefix: 'O' });
+    assert(/C-Chapitre → O-Ouverture/.test(out), out);
+    out = await call('delete_master', { master: 'O', replaceWith: 'A', confirmDestructive: true });
+    assert(/Master O-Ouverture deleted; pages 1, 2, 3, 4 now use A-/.test(out), out);
+    await fails('delete_master', { master: 'A' }, /confirm/i);
+    await closeDoc(name);
+    testDoc = previous;
+  });
+
+  await test('alternate layouts: create, page map, compare, delete', async () => {
+    const previous = testDoc;
+    const name = await layoutDoc();
+    testDoc = name;
+    await call('create_text_frame', { content: 'Titre de la page', x: 20, y: 20, width: 120, height: 20 });
+    let out = await call('create_alternate_layout', { name: 'Tablette', preset: 'A5', orientation: 'landscape', rule: 'scale' });
+    assert(/Layout Tablette created from .*4 pages of 210 × 148 mm/.test(out), out);
+    out = await call('view_page_map', { language: 'en' });
+    assert(/8 pages, 2 layouts/.test(out) && /Tablette:\n\s+1\[\w+\] \| 2\[\w+\] 3\[\w+\] \| 4\[\w+\]/.test(out), out);
+    const map = out.match(/\(file\): (\S+\.png)/)?.[1];
+    assert(map && fs.existsSync(map), `page map image written: ${out}`);
+    const layouts = out.match(/\n(.+):\n\s+1\[/)[1];
+    out = await call('compare_layouts', { a: layouts, b: 'Tablette', maxImages: 0, language: 'en' });
+    assert(/Tablette/.test(out) && !/Error/.test(out), out.slice(0, 600));
+    await fails('compare_layouts', { maxImages: 0 }, /Give a and b/);
+    out = await call('delete_alternate_layout', { name: 'Tablette', confirmDestructive: true });
+    assert(/Layout Tablette deleted \(4 pages\); the document has 4 pages/.test(out), out);
+    await closeDoc(name);
+    testDoc = previous;
+  });
+
+  await test('layers: create, move, set, move objects, delete with the objects moved; name_object', async () => {
+    const previous = testDoc;
+    const name = await layoutDoc();
+    testDoc = name;
+    await call('create_layer', { name: 'Fond' });
+    await call('create_layer', { name: 'Texte' });
+    let out = await call('move_layer', { name: 'Fond', position: 'bottom' });
+    assert(/Stack \(top first\): Texte > .+ > Fond$/m.test(out), out);
+    out = await call('set_layer', { name: 'Texte', newName: 'Textes', locked: false, printable: true });
+    assert(/Layer Textes: visible, unlocked, printing/.test(out), out);
+    const t = idOf(await call('create_text_frame', { content: 'Bonjour', x: 20, y: 20, width: 60, height: 10 }));
+    out = await call('move_to_layer', { ids: [t], layerName: 'Fond' });
+    assert(new RegExp(`1 object\\(s\\) moved to layer Fond: ${t}`).test(out), out);
+    out = await call('delete_layer', { name: 'Fond', moveItemsTo: 'Textes', confirmDestructive: true });
+    assert(/Layer Fond deleted; its 1 object\(s\) moved to Textes/.test(out), out);
+    assert(/layer: Textes|layer=Textes/i.test(await call('get_object_info', { id: t })), 'the object survived on Textes');
+    out = await call('name_object', { id: t, name: 'Titre' });
+    assert(/Named "Titre"/.test(out), out);
+    assert(new RegExp(`id=${t}\\b[^\\n]*name="Titre"`).test(await call('list_page_items', { pageIndex: 0 })), 'list_page_items shows the name');
+    await fails('delete_layer', { name: 'Textes' }, /confirm/i);
+    await closeDoc(name);
+    testDoc = previous;
+  });
+
+  await test('pages and objects: move_to_page, move_page', async () => {
+    const previous = testDoc;
+    const name = await layoutDoc();
+    testDoc = name;
+    const t = idOf(await call('create_text_frame', { content: 'Voyageur', x: 20, y: 20, width: 60, height: 10 }));
+    let out = await call('move_to_page', { id: t, page: '4', x: 30, y: 40 });
+    assert(new RegExp(`Moved TextFrame id=${t} from page 1 to page 4 at x=30 y=40`).test(out), out);
+    assert(new RegExp(`id=${t}\\b`).test(await call('list_page_items', { pageIndex: 3 })), 'now on page 4');
+    out = await call('move_page', { page: '4', position: 'start' });
+    assert(/position 4 -> 1 of 4/.test(out), out);
+    assert(new RegExp(`id=${t}\\b`).test(await call('list_page_items', { pageIndex: 0 })), 'the page moved with its object');
+    await closeDoc(name);
+    testDoc = previous;
+  });
+
+  await test('text: find_text (plain and GREP), list_grep_searches, french_typography (dry run, then applied)', async () => {
+    const previous = testDoc;
+    const name = await layoutDoc();
+    testDoc = name;
+    const t = idOf(await call('create_text_frame', { content: 'Bonjour le monde : un essai 1er', x: 20, y: 20, width: 150, height: 20 }));
+    let out = await call('find_text', { text: 'monde' });
+    assert(new RegExp(`1 match\\(es\\):\\n.*frame ${t}: Bonjour le \\[monde\\]`).test(out), out);
+    out = await call('find_text', { text: '\\d+er', useGrep: true });
+    assert(/\[1er\]/.test(out), out);
+    out = await call('list_grep_searches');
+    assert(/^(GREP Searches: )?Saved GREP queries: \d+/m.test(out), out);
+    assert(Number(out.match(/Saved GREP queries: (\d+)/)[1]) > 0 && /find: /.test(out), `InDesign's own queries are listed: ${out.slice(0, 400)}`);
+    out = await call('french_typography', { frameId: t, dryRun: true });
+    assert(/Dry run/.test(out) && /high_punctuation: 1/.test(out) && /ordinals: 1/.test(out), out);
+    assert(/Bonjour le monde : un essai 1er/.test(await call('get_text_content', { frameId: t })), 'a dry run changes nothing');
+    out = await call('french_typography', { frameId: t });
+    assert(/high_punctuation: 1/.test(out), out);
+    const text = inspect(`return app.activeDocument.textFrames.itemByID(${t}).parentStory.contents;`);
+    assert(/monde\u202F:/.test(text) || /monde\u00A0:/.test(text), `a non-breaking space before the colon: ${JSON.stringify(text)}`);
+    await closeDoc(name);
+    testDoc = previous;
+  });
+
+  await test('run_script: runs document code and notes itself; backups: create, list, restore', async () => {
+    const previous = testDoc;
+    const name = await layoutDoc({ filePath: path.join(TMP, 'backup-test.indd') });
+    testDoc = name;
+    let out = await call('run_script', { purpose: 'count frames', code: 'doc.textFrames.length', missing: 'a frame count' });
+    assert(/^(Run Script: )?0$/m.test(out) && /Noted as N\d+/.test(out), out);
+    assert(fs.existsSync(path.join(TMP, 'NOTES.md')), 'the note goes to the notes file of the test run');
+    await fails('run_script', { purpose: 'x', code: 'app.quit()' }, /document only/);
+    const t = idOf(await call('create_text_frame', { content: 'Avant', x: 20, y: 20, width: 60, height: 10 }));
+    await call('save_document', {});
+    out = await call('backup_document', { reason: 'test backup' });
+    const backup = out.match(/Backup created: (.+?\.indd)/)?.[1];
+    assert(backup && fs.existsSync(backup), out);
+    out = await call('list_backups');
+    assert(/1\. .*test-backup/.test(out), out);
+    await call('edit_text_frame', { frameId: t, content: 'Après' });
+    await fails('restore_backup', { backupPath: backup }, /confirm/i);
+    out = await call('restore_backup', { backupPath: backup, confirmDestructive: true });
+    assert(/restor/i.test(out), out);
+    assert(/Avant/.test(await call('get_text_content', { frameId: t })), 'the text of the backup is back');
+    assert(/2\./.test(await call('list_backups')), 'the state before the restore was backed up too');
+    await closeDoc(name);
+    testDoc = previous;
+  });
 
   console.log('\nErrors');
   await test('errors are readable: no osascript paths, numeric codes for InDesign errors', async () => {
