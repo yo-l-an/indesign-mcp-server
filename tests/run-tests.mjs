@@ -1372,6 +1372,7 @@ async function main() {
 
   await test('paste_into: a text frame and two rectangles inside an oval, grouped, in place; the review reads as a move', async () => {
     const name = await newDoc({ preset: 'A5' });
+    const previous = testDoc;   // the next tests start in the document this section was using
     testDoc = name;
     await call('create_color_swatch', { name: 'PasteRed', colorValues: [0, 100, 100, 0] });
     const oval = idOf(await call('create_ellipse', { x: 20, y: 20, width: 100, height: 80 }));
@@ -1403,10 +1404,12 @@ async function main() {
     const t2 = idOf(await call('create_text_frame', { content: 'x', x: 10, y: 150, width: 20, height: 10 }));
     await fails('paste_into', { ids: [t2], shapeId: t2 }, /also in ids/);
     await closeDoc(name);
+    testDoc = previous;
   });
 
   await test('move_into_group keeps the group (name, opacity, place in the stack); bring_to_front / send_to_back by reference', async () => {
     const name = await newDoc({ preset: 'A5' });
+    const previous = testDoc;   // the next tests start in the document this section was using
     testDoc = name;
     const under = idOf(await call('create_rectangle', { x: 0, y: 0, width: 148, height: 100 }));
     const a = idOf(await call('create_rectangle', { x: 10, y: 10, width: 20, height: 20 }));
@@ -1450,6 +1453,7 @@ async function main() {
     await fails('bring_to_front', { id: over, inFrontOf: a }, /same parent/);
     await fails('move_into_group', { ids: [over], groupId: ng, inFrontOf: under }, /not a member/);
     await closeDoc(name);
+    testDoc = previous;
   });
 
   await test('duplicate_object, align_objects, distribute_objects', async () => {
@@ -1725,6 +1729,7 @@ async function main() {
       { width: 148, height: 105, bleed: { top: 3, left: 4, bottom: 6, right: 5 } },
     ]);
     const name = await newDoc({ preset: 'A5', bleed: 8 });
+    const previous = testDoc;   // the next tests start in the document this section was using
     testDoc = name;
     // the artboard's size with each tool
     const placed = [];
@@ -1760,6 +1765,7 @@ async function main() {
     await fails('place_image', { imagePath: pdf, crop: 'trim', position: 'artboard' }, /crop: "bleed"/);
     await fails('place_graphic', { filePath: pdf, pdfPage: 3 }, /no page 3/);
     await closeDoc(name);
+    testDoc = previous;
   });
 
   await test('create_graphic_from_svg: linked temp file, embed, saveTo, and rejected markup', async () => {

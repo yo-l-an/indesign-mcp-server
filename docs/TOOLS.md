@@ -12,7 +12,7 @@ Conventions shared by every tool, then each tool with its parameters, then the k
 - The server switches the active document to millimetres and per-page ruler origin while a tool runs and restores your settings afterwards.
 
 ### Addressing objects
-Every `create_*` tool and `place_image` returns the object's **id**. Use it with any tool that takes an object (`id`, or `frameId` for text tools). ids are stable: they do not change when objects are added, deleted or reordered. `pageIndex` + `index` (or `frameIndex`) are accepted as a fallback but **shift when the stacking order changes**: index 0 is the *frontmost* object, not the oldest. `list_text_frames` and `list_page_items` show both id and index.
+Every `create_*` tool and `place_image` returns the object's **id**. Use it with any tool that takes an object (`id`, or `frameId` for text tools). ids are stable: they do not change when objects are added, deleted or reordered. Two tools re-create objects and print the new ids: `paste_into` (every object put in the shape) and `move_into_group` (the group). `pageIndex` + `index` (or `frameIndex`) are accepted as a fallback but **shift when the stacking order changes**: index 0 is the *frontmost* object, not the oldest. `list_text_frames` and `list_page_items` show both id and index.
 
 ### Text
 - In `content`, `\n` makes a **paragraph break** by default. Pass `lineBreak: "forced"` to make every `\n` a forced line break (Shift+Enter), or use `<br>` inside the text for individual forced breaks.
