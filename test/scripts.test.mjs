@@ -55,8 +55,11 @@ const ARGS = {
 const TOOLS = await toolNames();
 // Tools that answer without InDesign
 const NO_SCRIPT = new Set(['get_usage_guide', 'add_improvement_note', 'read_improvement_notes']);
+// Tools that act on the server folder itself (git): tested on temporary repositories in test/notes.test.mjs
+const NOT_CALLED = new Set(['check_server_updates']);
 
 for (const method of TOOLS) {
+  if (NOT_CALLED.has(method)) continue;
   test(`${method}: produces parseable ExtendScript`, async () => {
     const { error, script } = await runTool(method, { ...ARGS });
 
